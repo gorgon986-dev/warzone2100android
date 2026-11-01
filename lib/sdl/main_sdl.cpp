@@ -1320,6 +1320,10 @@ static inline void initKeycodes()
 	{
 		SDLScancode_to_KEY_CODE.insert(std::pair<SDL_Scancode, KEY_CODE>(it->second, it->first));
 	}
+#if defined(__ANDROID__)
+	// Android's Back button / gesture acts like Escape (opens the in-game menu, closes dialogs)
+	SDLScancode_to_KEY_CODE.insert(std::pair<SDL_Scancode, KEY_CODE>(SDL_SCANCODE_AC_BACK, KEY_ESC));
+#endif
 }
 
 static inline KEY_CODE sdlScancodeToKeyCode(SDL_Scancode key)
@@ -1836,8 +1840,199 @@ float calculateEuclideanDistance(float x1, float y1, float x2, float y2)
 	return std::sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
 }
 
+#if defined(__ANDROID__)
+# define WZ_CUSTOM_TOUCH_MOUSE_EMULATION
+#endif
+
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+/* Touch -> mouse translation for touch-only devices (phones / tablets)
+ *
+ *  - Tap ........................ left click (select / give order / press button)
+ *  - Drag with one finger ....... left-button drag (selection box, sliders, scrolling lists)
+ *  - Long press ................. right click (deselect / cancel / context)
+ *  - Tap with two fingers ....... right click
+ *  - Two-finger drag / pinch .... pan / zoom the camera (handled by the gesture code below)
+ *
+ * SDL's own touch->mouse synthesis is disabled (SDL_HINT_TOUCH_MOUSE_EVENTS=0) so this is the only source.
+ */
+static void inputHandleMouseButtonEvent(SDL_MouseButtonEvent *buttonEvent);
+static void inputHandleMouseMotionEvent(SDL_MouseMotionEvent *motionEvent);
+
+namespace touchemu
+{
+	enum class State { Idle, Pending, Dragging, LongPressed, Multi };
+	static State state = State::Idle;
+	static SDL_FingerID primaryId = 0;
+	static float downX = 0.f, downY = 0.f;   // window coordinates
+	static float lastX = 0.f, lastY = 0.f;
+	static uint64_t downTicks = 0;
+	static uint64_t multiStartTicks = 0;
+	static float multiTravel = 0.f;
+
+	static const uint64_t LONG_PRESS_MS = 450;
+	static const uint64_t TWO_FINGER_TAP_MS = 300;
+
+	static void toWindowCoords(const SDL_TouchFingerEvent &e, float &x, float &y)
+	{
+		int w = 0, h = 0;
+		if (WZwindow) { SDL_GetWindowSize(WZwindow, &w, &h); }
+		x = e.x * static_cast<float>(w);
+		y = e.y * static_cast<float>(h);
+	}
+
+	static float slop()
+	{
+		// ~10dp: how far a finger can wander before a tap becomes a drag
+		float scale = (WZwindow) ? SDL_GetWindowDisplayScale(WZwindow) : 1.f;
+		if (scale <= 0.f) { scale = 1.f; }
+		return 10.f * scale;
+	}
+
+	static void mouseMove(float x, float y)
+	{
+		SDL_MouseMotionEvent m;
+		SDL_zero(m);
+		m.type = SDL_EVENT_MOUSE_MOTION;
+		m.which = SDL_TOUCH_MOUSEID;
+		m.x = x; m.y = y;
+		inputHandleMouseMotionEvent(&m);
+	}
+
+	static void mouseButton(Uint8 button, bool down, float x, float y)
+	{
+		SDL_MouseButtonEvent b;
+		SDL_zero(b);
+		b.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+		b.which = SDL_TOUCH_MOUSEID;
+		b.button = button;
+		b.down = down;
+		b.clicks = 1;
+		b.x = x; b.y = y;
+		inputHandleMouseButtonEvent(&b);
+	}
+
+	static void click(Uint8 button, float x, float y)
+	{
+		mouseMove(x, y);
+		mouseButton(button, true, x, y);
+		mouseButton(button, false, x, y);
+	}
+
+	// Called after the shared finger tracking (touchPoints) has been updated
+	static void handleFinger(const SDL_TouchFingerEvent &e)
+	{
+		float x, y;
+		toWindowCoords(e, x, y);
+		const size_t fingers = touchPoints.size();
+
+		switch (e.type)
+		{
+		case SDL_EVENT_FINGER_DOWN:
+			if (state == State::Idle && fingers == 1)
+			{
+				state = State::Pending;
+				primaryId = e.fingerID;
+				downX = lastX = x;
+				downY = lastY = y;
+				downTicks = SDL_GetTicks();
+				mouseMove(x, y);
+			}
+			else if (state == State::Pending || state == State::LongPressed)
+			{
+				// a second finger joined before anything was committed: camera gesture / two-finger tap
+				state = State::Multi;
+				multiStartTicks = SDL_GetTicks();
+				multiTravel = 0.f;
+			}
+			// (while Dragging, extra fingers are ignored)
+			break;
+
+		case SDL_EVENT_FINGER_MOTION:
+			if (state == State::Multi)
+			{
+				multiTravel += std::fabs(e.dx * 1000.f) + std::fabs(e.dy * 1000.f);
+				break;
+			}
+			if (e.fingerID != primaryId) { break; }
+			lastX = x; lastY = y;
+			if (state == State::Pending)
+			{
+				if (calculateEuclideanDistance(downX, downY, x, y) > slop())
+				{
+					state = State::Dragging;
+					mouseButton(SDL_BUTTON_LEFT, true, downX, downY);
+					mouseMove(x, y);
+				}
+			}
+			else if (state == State::Dragging)
+			{
+				mouseMove(x, y);
+			}
+			break;
+
+		case SDL_EVENT_FINGER_UP:
+		case SDL_EVENT_FINGER_CANCELED:
+		{
+			const bool cancelled = (e.type == SDL_EVENT_FINGER_CANCELED);
+			if (state == State::Multi)
+			{
+				if (fingers == 0)
+				{
+					// multiTravel is in thousandths of the screen
+					if (!cancelled && multiTravel < 30.f && (SDL_GetTicks() - multiStartTicks) < TWO_FINGER_TAP_MS)
+					{
+						click(SDL_BUTTON_RIGHT, downX, downY);
+					}
+					state = State::Idle;
+				}
+				break;
+			}
+			if (e.fingerID != primaryId)
+			{
+				if (fingers == 0) { state = State::Idle; }
+				break;
+			}
+			if (state == State::Pending && !cancelled)
+			{
+				click(SDL_BUTTON_LEFT, downX, downY);
+			}
+			else if (state == State::Dragging)
+			{
+				mouseMove(lastX, lastY);
+				mouseButton(SDL_BUTTON_LEFT, false, lastX, lastY);
+			}
+			state = (fingers == 0) ? State::Idle : State::LongPressed; // LongPressed == "ignore until all fingers are up"
+			break;
+		}
+		default:
+			break;
+		}
+	}
+
+	// Called once per frame (long press has no event of its own)
+	static void update()
+	{
+		if (state == State::Pending && (SDL_GetTicks() - downTicks) >= LONG_PRESS_MS)
+		{
+			state = State::LongPressed;
+			click(SDL_BUTTON_RIGHT, downX, downY);
+		}
+	}
+
+	static void reset()
+	{
+		if (state == State::Dragging)
+		{
+			mouseButton(SDL_BUTTON_LEFT, false, lastX, lastY);
+		}
+		state = State::Idle;
+	}
+}
+#endif // WZ_CUSTOM_TOUCH_MOUSE_EMULATION
+
 static void inputHandleTouchFingerEvent(const SDL_TouchFingerEvent &touchFingerEvent)
 {
+	lastPointerInputWasTouch = true;
 	switch (touchFingerEvent.type)
 	{
 		case SDL_EVENT_FINGER_DOWN:
@@ -1942,6 +2137,10 @@ static void inputHandleTouchFingerEvent(const SDL_TouchFingerEvent &touchFingerE
 		default:
 			break;
 	}
+
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+	touchemu::handleFinger(touchFingerEvent);
+#endif
 }
 
 // Returns a float if pinch gesture is in progress
@@ -3914,6 +4113,15 @@ bool wzMainScreenSetup(optional<video_backend> backend, int antialiasing, WINDOW
 	}
 #endif
 
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+	// Touch is translated to mouse input by touchemu (see inputHandleTouchFingerEvent)
+	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+#endif
+#if defined(__ANDROID__)
+	SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
+	SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+#endif
+
 #if defined(SDL_HINT_MOUSE_DPI_SCALE_CURSORS)
 	// set SDL_HINT_MOUSE_DPI_SCALE_CURSORS to 1, to enable auto-scaling of cursors to display content scale by default
 	if (!SDL_SetHint(SDL_HINT_MOUSE_DPI_SCALE_CURSORS, "1"))
@@ -4269,6 +4477,9 @@ static void handleActiveEvent(SDL_Event *event)
 				actualKeyState[i].state = KEY_UP;
 			}
 			touchPoints.clear();
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+			touchemu::reset();
+#endif
 			wzGamepadResetInputState();
 			break;
 		case SDL_EVENT_WINDOW_CLOSE_REQUESTED :
@@ -4397,6 +4608,9 @@ void wzEventLoopOneFrame(void* arg)
 
 	processScreenSizeChangeNotificationIfNeeded();
 	wzGamepadUpdate();			// poll gamepad axis state
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+	touchemu::update();			// long-press detection
+#endif
 	mainLoop();				// WZ does its thing
 	inputNewFrame();			// reset input states
 #if defined(__EMSCRIPTEN__)

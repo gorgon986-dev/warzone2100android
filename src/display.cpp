@@ -1350,6 +1350,11 @@ static void calcScroll(double *y, double *dydt, double accel, double decel, doub
 
 static inline bool shouldProcessEdgeScroll()
 {
+	if (inputLastPointerInputWasTouch())
+	{
+		// a finger lifted near the screen edge must not keep the camera scrolling
+		return false;
+	}
 	return wzMouseInWindow() || (bEdgeScrollOutsideWindowBounds && wzWindowHasFocus());
 }
 
