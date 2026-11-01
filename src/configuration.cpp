@@ -626,6 +626,9 @@ bool loadConfig()
 	war_SetGamepadRumble(iniGetBool("gamepadRumble", true).value());
 	war_SetGamepadShowLayoutOnConnect(iniGetBool("gamepadShowLayoutOnConnect", true).value());
 	war_SetGamepadLayoutSeenDevices(iniGetString("gamepadLayoutSeenDevices", "").value());
+	war_setTouchGuideSeen(iniGetBool("touchGuideSeen", false).value());
+	war_setTakeABreakAI(iniGetString("takeABreakAI", "").value());
+	war_setTakeABreakDifficulty(iniGetInteger("takeABreakDifficulty", war_getTakeABreakDifficulty()).value());
 	auto intOnScreenKeyboardModeValue = iniGetInteger("onScreenKeyboardMode", static_cast<int>(VirtualKeyboardMode::Automatic)).value();
 	if (intOnScreenKeyboardModeValue < static_cast<int>(VirtualKeyboardMode::Automatic) || intOnScreenKeyboardModeValue > static_cast<int>(VirtualKeyboardMode::Disabled))
 	{
@@ -1067,6 +1070,9 @@ bool saveConfig()
 	iniSetBool("gamepadRumble", war_GetGamepadRumble());
 	iniSetBool("gamepadShowLayoutOnConnect", war_GetGamepadShowLayoutOnConnect());
 	iniSetString("gamepadLayoutSeenDevices", war_GetGamepadLayoutSeenDevices());
+	iniSetBool("touchGuideSeen", war_getTouchGuideSeen());
+	iniSetString("takeABreakAI", war_getTakeABreakAI());
+	iniSetInteger("takeABreakDifficulty", war_getTakeABreakDifficulty());
 	iniSetInteger("onScreenKeyboardMode", static_cast<int>(virtualKeyboardGetMode()));
 	iniSetString("onScreenKeyboardLayout", virtualKeyboardGetLayoutPreference());
 	iniSetInteger("vsync", war_GetVsync());

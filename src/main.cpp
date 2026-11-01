@@ -103,6 +103,7 @@
 #include "cameratrace.h"
 #include "ordersource.h"
 #include "notifications.h"
+#include "screens/touchguidescreen.h"
 #include "screens/gamepadlayoutscreen.h"
 #include "input/gamepadcursor.h"
 #include "lib/widget/virtualkeyboard.h"
@@ -1431,6 +1432,7 @@ void mainLoop()
 	virtualKeyboardUpdate();
 	gamepadCursorUpdateWidgetMagnet();
 	gamepadLayoutMaybeAutoShow();
+	touchGuideMaybeAutoShow();
 	runNotifications();
 	wz_command_interface_process_queued_status_output();
 #if defined(ENABLE_DISCORD)

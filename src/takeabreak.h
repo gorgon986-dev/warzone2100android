@@ -23,6 +23,8 @@
 
 #pragma once
 
+#include <string>
+
 /// Whether Take a Break can be used in the current game (skirmish / multiplayer skirmish, not a replay or spectating)
 bool takeABreakAvailable();
 /// Whether an AI is currently playing for the local player
@@ -31,5 +33,7 @@ bool takeABreakActive();
 bool takeABreakStart();
 /// Takes control back from the AI
 void takeABreakStop();
+/// Sends a typed command (ex. "build defenses") to the AI
+void takeABreakSendCommand(const std::string &command);
 /// Adds / removes the "Take back control" banner to match the current state
 void takeABreakRefreshBanner();

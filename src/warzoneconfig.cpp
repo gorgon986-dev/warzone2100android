@@ -134,6 +134,9 @@ struct WARZONE_GLOBALS
 	bool groupsMenuEnabled = true;
 	uint8_t optionsButtonVisibility = 100;
 	unsigned int touchButtonScale = 100;
+	bool touchGuideSeen = false;
+	std::string takeABreakAI;
+	int takeABreakDifficulty = 3; // AIDifficulty::HARD
 
 	// run-time only settings (not persisted to config!)
 	bool allowVulkanImplicitLayers = false;
@@ -1071,6 +1074,36 @@ void war_setGroupsMenuEnabled(bool enabled)
 void war_runtimeOnlySetAllowVulkanImplicitLayers(bool allowed) // not persisted to config
 {
 	warGlobs.allowVulkanImplicitLayers = allowed;
+}
+
+bool war_getTouchGuideSeen()
+{
+	return warGlobs.touchGuideSeen;
+}
+
+void war_setTouchGuideSeen(bool val)
+{
+	warGlobs.touchGuideSeen = val;
+}
+
+std::string war_getTakeABreakAI()
+{
+	return warGlobs.takeABreakAI;
+}
+
+void war_setTakeABreakAI(const std::string& val)
+{
+	warGlobs.takeABreakAI = val;
+}
+
+int war_getTakeABreakDifficulty()
+{
+	return warGlobs.takeABreakDifficulty;
+}
+
+void war_setTakeABreakDifficulty(int val)
+{
+	warGlobs.takeABreakDifficulty = std::max(0, std::min(val, 4)); // SUPEREASY..INSANE
 }
 
 unsigned int war_getTouchButtonScale()

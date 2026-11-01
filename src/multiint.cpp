@@ -474,6 +474,11 @@ void setDefaultSkirmishAI(const std::string& name)
 	defaultSkirmishAI = name;
 }
 
+const std::vector<AIDATA>& getAIDataList()
+{
+	return aidata;
+}
+
 std::string getDefaultSkirmishAI(const bool& displayNameOnly/*=false*/)
 {
 	const std::string fallbackAI = DEFAULT_SKIRMISH_AI_SCRIPT_NAME;

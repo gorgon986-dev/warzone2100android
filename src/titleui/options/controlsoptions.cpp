@@ -22,6 +22,7 @@
  *  Controls Options form
  */
 
+#include "../../screens/touchguidescreen.h"
 #include "optionsforms.h"
 
 #include "../../warzoneconfig.h"
@@ -1583,6 +1584,22 @@ std::shared_ptr<OptionsForm> makeGamepadOptionsForm()
 		result->addOption(optionInfo, valueChanger, true);
 	}
 
+#if defined(__ANDROID__)
+	result->addSection(OptionsSection(N_("Touch Controls"), ""), true);
+	{
+		auto optionInfo = OptionInfo("touch.guide", N_("Touch Controls Guide"), N_("How to play with touch: camera, selecting, orders, touch buttons, Take a Break and AI commands"));
+		auto valueChanger = OptionsButton::make(
+			[](OptionsButton& but) {
+				but.setString(_("View Guide"));
+			}, false
+		);
+		valueChanger->addOnClickHandler([](W_BUTTON&) {
+			widgScheduleTask([]() { showTouchGuideScreen(); });
+		});
+		result->addOption(optionInfo, valueChanger, true);
+	}
+
+#endif
 	result->addSection(OptionsSection(N_("On-Screen Keyboard"), N_("A keyboard for entering text with a gamepad or touch")), true);
 	{
 		auto optionInfo = OptionInfo("onScreenKeyboard.mode", N_("On-Screen Keyboard"), N_("When to show a keyboard on screen while editing text"));

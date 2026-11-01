@@ -179,6 +179,8 @@ extern std::string defaultSkirmishAI;
 void frontendCycleAIs();
 void setDefaultSkirmishAI(const std::string& name);
 std::string getDefaultSkirmishAI(const bool& displayNameOnly=false);
+/// The AIs available for skirmish games
+const std::vector<AIDATA>& getAIDataList();
 
 void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type, bool banPlayer = false);
 void displayKickReasonPopup(const std::string &reason);

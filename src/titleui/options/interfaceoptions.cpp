@@ -335,6 +335,58 @@ std::shared_ptr<OptionsForm> makeInterfaceOptionsForm(bool inGame, const std::fu
 	}
 #endif
 
+	result->addSection(OptionsSection(N_("Take a Break"), N_("An AI plays for you while you take a break (Game Menu > Take a Break)")), true);
+	{
+		auto optionInfo = OptionInfo("interface.takeABreak.ai", N_("AI"), N_("Which AI plays for you"));
+		auto valueChanger = OptionsDropdown<std::string>::make(
+			[]() {
+				OptionChoices<std::string> result;
+				result.choices.push_back({ WzString::fromUtf8(astringf(_("Default (%s)"), getDefaultSkirmishAI(true).c_str())), "", std::string() });
+				for (const auto &ai : getAIDataList())
+				{
+					if (ai.js[0] != '\0')
+					{
+						result.choices.push_back({ WzString::fromUtf8(ai.name), "", std::string(ai.js) });
+					}
+				}
+				if (!result.setCurrentIdxForValue(war_getTakeABreakAI()))
+				{
+					result.currentIdx = 0;
+				}
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				war_setTakeABreakAI(newValue);
+				return true;
+			}, true
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+	{
+		auto optionInfo = OptionInfo("interface.takeABreak.difficulty", N_("AI Level"), N_("How well the AI plays for you (it never gets bonus resources)"));
+		auto valueChanger = OptionsDropdown<int>::make(
+			[]() {
+				OptionChoices<int> result;
+				result.choices = {
+					{ _("Easy"), "", static_cast<int>(AIDifficulty::EASY) },
+					{ _("Medium"), "", static_cast<int>(AIDifficulty::MEDIUM) },
+					{ _("Hard"), "", static_cast<int>(AIDifficulty::HARD) },
+					{ _("Insane"), "", static_cast<int>(AIDifficulty::INSANE) },
+				};
+				if (!result.setCurrentIdxForValue(war_getTakeABreakDifficulty()))
+				{
+					result.setCurrentIdxForValue(static_cast<int>(AIDifficulty::HARD));
+				}
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				war_setTakeABreakDifficulty(newValue);
+				return true;
+			}, true
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+
 	result->addSection(OptionsSection(N_("Radar"), ""), true);
 	{
 		auto optionInfo = OptionInfo("interface.game.rotateRadar", N_("Radar Orientation"), "");

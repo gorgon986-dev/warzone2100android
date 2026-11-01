@@ -317,6 +317,12 @@ uint8_t war_getOptionsButtonVisibility();
 void war_setOptionsButtonVisibility(uint8_t val);
 unsigned int war_getTouchButtonScale(); // percent, size of the on-screen touch buttons
 void war_setTouchButtonScale(unsigned int val);
+bool war_getTouchGuideSeen(); // whether the touch controls guide was shown on first launch
+void war_setTouchGuideSeen(bool val);
+std::string war_getTakeABreakAI(); // AI script (ex. "nexus.js") for Take a Break; empty = default skirmish AI
+void war_setTakeABreakAI(const std::string& val);
+int war_getTakeABreakDifficulty(); // AIDifficulty value
+void war_setTakeABreakDifficulty(int val);
 
 void war_runtimeOnlySetAllowVulkanImplicitLayers(bool allowed); // not persisted to config
 bool war_getAllowVulkanImplicitLayers();

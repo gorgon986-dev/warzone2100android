@@ -40,6 +40,8 @@
 #include "lib/netplay/netplay.h"
 #include "lib/widget/widget.h"
 #include "lib/widget/button.h"
+#include "lib/widget/editbox.h"
+#include "lib/framework/input.h"
 
 #include "qtscript.h"
 #include "wzapi.h"
@@ -50,11 +52,18 @@
 #include "intdisplay.h"
 #include "intimage.h"
 #include "console.h"
+#include "warzoneconfig.h"
 
 static wzapi::scripting_instance *breakAI = nullptr;
+static wzapi::scripting_instance *breakCommander = nullptr; // carries out typed commands
 static std::string breakAIName;
+static bool commandBoxOpen = false;
+
+static const char *COMMANDER_SCRIPT = "multiplay/script/takeabreak_commander.js";
 
 static const UDWORD IDTAKEABREAK_FORM = 0x7A2000;
+
+static void rebuildBanner();
 
 bool takeABreakAvailable()
 {
@@ -79,6 +88,8 @@ bool takeABreakActive()
 	{
 		// the game ended / scripts were shut down
 		breakAI = nullptr;
+		breakCommander = nullptr;
+		commandBoxOpen = false;
 	}
 	return breakAI != nullptr;
 }
@@ -102,15 +113,26 @@ bool takeABreakStart()
 		return false;
 	}
 
-	const std::string aiScript = getDefaultSkirmishAI();
-	const std::string aiDisplayName = getDefaultSkirmishAI(true);
+	// the AI chosen in Options > Interface > Take a Break, or the default skirmish AI
+	std::string aiScript = getDefaultSkirmishAI();
+	std::string aiDisplayName = getDefaultSkirmishAI(true);
+	const std::string chosen = war_getTakeABreakAI();
+	for (const auto &ai : getAIDataList())
+	{
+		if (!chosen.empty() && chosen == ai.js)
+		{
+			aiScript = ai.js;
+			aiDisplayName = ai.name;
+		}
+	}
+	const AIDifficulty difficulty = static_cast<AIDifficulty>(war_getTakeABreakDifficulty());
 	if (aiScript.empty())
 	{
 		addConsoleMessage(_("No AI available to take over."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
 		return false;
 	}
 
-	wzapi::scripting_instance *instance = loadPlayerScript(WzString("multiplay/skirmish/") + WzString::fromUtf8(aiScript), selectedPlayer, AIDifficulty::HARD, wzapi::ScriptBinding::PlayerAI);
+	wzapi::scripting_instance *instance = loadPlayerScript(WzString("multiplay/skirmish/") + WzString::fromUtf8(aiScript), selectedPlayer, difficulty, wzapi::ScriptBinding::PlayerAI);
 	if (!instance)
 	{
 		addConsoleMessage(_("Failed to start the AI. Check the logs for details."), DEFAULT_JUSTIFY, SYSTEM_MESSAGE);
@@ -121,8 +143,20 @@ bool takeABreakStart()
 
 	breakAI = instance;
 	breakAIName = aiDisplayName;
+
+	breakCommander = loadPlayerScript(WzString(COMMANDER_SCRIPT), selectedPlayer, difficulty, wzapi::ScriptBinding::PlayerAI);
+	if (breakCommander)
+	{
+		breakCommander->handle_eventGameInit();
+		breakCommander->handle_eventStartLevel();
+	}
+	else
+	{
+		debug(LOG_ERROR, "Failed to load %s", COMMANDER_SCRIPT);
+	}
 	announce(astringf(_("%s is taking a break - the %s AI is playing for them."), getPlayerName(selectedPlayer), aiDisplayName.c_str()));
-	takeABreakRefreshBanner();
+	commandBoxOpen = false;
+	rebuildBanner();
 	return true;
 }
 
@@ -135,8 +169,29 @@ void takeABreakStop()
 	}
 	unloadPlayerScript(breakAI);
 	breakAI = nullptr;
+	if (breakCommander && isPlayerScriptLoaded(breakCommander))
+	{
+		unloadPlayerScript(breakCommander);
+	}
+	breakCommander = nullptr;
+	commandBoxOpen = false;
 	announce(astringf(_("%s is back in control."), getPlayerName(selectedPlayer)));
-	takeABreakRefreshBanner();
+	rebuildBanner();
+}
+
+void takeABreakSendCommand(const std::string &command)
+{
+	if (!takeABreakActive() || command.empty())
+	{
+		return;
+	}
+	addConsoleMessage(astringf(_("You: %s"), command.c_str()).c_str(), DEFAULT_JUSTIFY, selectedPlayer);
+	if (breakCommander && isPlayerScriptLoaded(breakCommander))
+	{
+		breakCommander->handle_eventChat(selectedPlayer, selectedPlayer, command.c_str());
+	}
+	// the AI itself may understand some commands too (ex. Cobra's strategy names)
+	breakAI->handle_eventChat(selectedPlayer, selectedPlayer, command.c_str());
 }
 
 namespace
@@ -169,6 +224,19 @@ private:
 };
 }
 
+static void addBannerButton(const std::shared_ptr<WIDGET> &parent, const WzString &text, const std::function<void()> &onClick, int x, int y, int w, int h)
+{
+	auto button = std::make_shared<TakeBackControlButton>();
+	parent->attach(button);
+	button->setString(text);
+	button->setGeometry(x, y, w, h);
+	button->addOnClickHandler([onClick](W_BUTTON&) {
+		widgScheduleTask([onClick]() { onClick(); });
+	});
+}
+
+static void rebuildBanner();
+
 void takeABreakRefreshBanner()
 {
 	if (!psWScreen)
@@ -177,30 +245,76 @@ void takeABreakRefreshBanner()
 	}
 	auto existing = widgGetFromID(psWScreen, IDTAKEABREAK_FORM);
 	const bool active = takeABreakActive();
-	if (!active)
+	if (existing && active)
 	{
-		if (existing)
-		{
-			widgDelete(existing);
-		}
+		return; // keep it (and anything typed in the command box)
+	}
+	rebuildBanner();
+}
+
+static void rebuildBanner()
+{
+	if (!psWScreen)
+	{
 		return;
 	}
-	if (existing)
+	if (auto existing = widgGetFromID(psWScreen, IDTAKEABREAK_FORM))
+	{
+		widgDelete(existing);
+	}
+	if (!takeABreakActive())
 	{
 		return;
 	}
 
-	auto button = std::make_shared<TakeBackControlButton>();
-	button->id = IDTAKEABREAK_FORM;
-	psWScreen->psForm->attach(button);
-	button->setString(WzString::fromUtf8(astringf(_("%s AI is playing for you - tap here to take back control"), breakAIName.c_str())));
-	button->setTip(_("Take back control from the AI"));
-	button->addOnClickHandler([](W_BUTTON&) {
-		widgScheduleTask([]() { takeABreakStop(); });
-	});
-	button->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
-		const int w = std::min<int>(static_cast<int>(screenWidth) - 40, 520);
-		const int h = 34;
+	const int bannerH = 34;
+	const int gap = 6;
+	auto form = std::make_shared<IntFormTransparent>();
+	form->id = IDTAKEABREAK_FORM;
+	psWScreen->psForm->attach(form);
+	const bool showCommandBox = commandBoxOpen;
+	form->setCalcLayout([showCommandBox](WIDGET *psWidget) {
+		const int w = std::min<int>(static_cast<int>(screenWidth) - 40, 620);
+		const int h = showCommandBox ? (34 * 2 + 6) : 34;
 		psWidget->setGeometry((static_cast<int>(screenWidth) - w) / 2, 64, w, h);
-	}));
+	});
+	const int formW = std::min<int>(static_cast<int>(screenWidth) - 40, 620);
+	const int commandW = 120;
+
+	addBannerButton(form, WzString::fromUtf8(astringf(_("%s AI is playing for you - tap to take back control"), breakAIName.c_str())),
+		[]() { takeABreakStop(); }, 0, 0, formW - commandW - gap, bannerH);
+	addBannerButton(form, WzString::fromUtf8(commandBoxOpen ? _("Close") : _("Command AI")),
+		[]() { commandBoxOpen = !commandBoxOpen; rebuildBanner(); }, formW - commandW, 0, commandW, bannerH);
+
+	if (commandBoxOpen)
+	{
+		const int sendW = 90;
+		auto editBox = std::make_shared<W_EDITBOX>();
+		form->attach(editBox);
+		editBox->setGeometry(0, bannerH + gap, formW - sendW - gap, bannerH);
+		editBox->setMaxStringSize(120);
+		editBox->setPlaceholder(_("Tell the AI what to do - ex. build defenses, build 5 units, attack (type help)"));
+		std::weak_ptr<W_EDITBOX> weakEditBox = editBox;
+		auto send = [weakEditBox]() {
+			if (auto box = weakEditBox.lock())
+			{
+				const std::string text = box->getString().toUtf8();
+				box->setString("");
+				takeABreakSendCommand(text);
+			}
+		};
+		editBox->setOnReturnHandler([send](W_EDITBOX&) { widgScheduleTask(send); });
+		addBannerButton(form, WzString::fromUtf8(_("Send")), send, formW - sendW, bannerH + gap, sendW, bannerH);
+
+		// focus the box so the keyboard comes up
+		widgScheduleTask([weakEditBox]() {
+			if (auto box = weakEditBox.lock())
+			{
+				W_CONTEXT context = W_CONTEXT::ZeroContext();
+				context.mx = mouseX();
+				context.my = mouseY();
+				box->simulateClick(&context, true);
+			}
+		});
+	}
 }
