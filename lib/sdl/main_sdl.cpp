@@ -3716,6 +3716,16 @@ optional<SDL_gfx_api_Impl_Factory::Configuration> wzMainScreenSetup_CreateVideoW
 		}
 	}
 
+#if defined(__ANDROID__)
+	// Always run edge-to-edge on Android: hide the status bar and navigation bar (immersive mode).
+	// (Swiping in from the edge shows them temporarily; they hide again by themselves.)
+	SDL_SetWindowFullscreenMode(WZwindow, nullptr);
+	if (!SDL_SetWindowFullscreen(WZwindow, true))
+	{
+		debug(LOG_ERROR, "Failed to enter fullscreen: %s", SDL_GetError());
+	}
+#endif
+
 	// Get resulting logical window size
 	int resultingWidth, resultingHeight = 0;
 	SDL_GetWindowSize(WZwindow, &resultingWidth, &resultingHeight);

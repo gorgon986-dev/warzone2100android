@@ -1211,7 +1211,12 @@ void processGestureInput()
 			if (pinchScaleUpdate.value() != 1.0f)
 			{
 				float startingDistance = viewDistanceAnimation.isActive() ? viewDistanceAnimation.getFinalData() : getViewDistance();
+#if defined(__ANDROID__)
+				// Touchscreen convention: spreading the fingers apart zooms in (camera moves closer)
+				float target = std::max<float>(startingDistance, 100.f) / pinchScaleUpdate.value();
+#else
 				float target = std::max<float>(startingDistance, 100.f) * pinchScaleUpdate.value();
+#endif
 
 				target = std::clamp(target, static_cast<float>(MINDISTANCE), static_cast<float>((!NETisReplay()) ? MAXDISTANCE : MAXDISTANCE_REPLAY));
 
