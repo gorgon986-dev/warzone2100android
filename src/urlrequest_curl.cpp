@@ -49,6 +49,9 @@
 #if !defined(__EMSCRIPTEN__)
 
 #define NOMINMAX
+#if defined(__ANDROID__)
+#include <unistd.h>
+#endif
 #include "urlrequest.h"
 #include "urlrequest_private.h"
 #include "lib/framework/wzapp.h"
@@ -717,6 +720,24 @@ public:
 		//
 		// (This option is ignored by other TLS backends.)
 		curl_easy_setopt(handle, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_REVOKE_BEST_EFFORT));
+	#endif
+
+	#if defined(__ANDROID__)
+		// Android keeps its trusted CA certificates in an OpenSSL-style hashed directory
+		{
+			static const char* androidCAPath = []() -> const char* {
+				const char* candidates[] = { "/apex/com.android.conscrypt/cacerts", "/system/etc/security/cacerts" };
+				for (const char* dir : candidates)
+				{
+					if (access(dir, R_OK) == 0) { return dir; }
+				}
+				return nullptr;
+			}();
+			if (androidCAPath)
+			{
+				curl_easy_setopt(handle, CURLOPT_CAPATH, androidCAPath);
+			}
+		}
 	#endif
 
 		return handle;
