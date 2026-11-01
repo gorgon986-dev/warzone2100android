@@ -82,7 +82,8 @@ jobs:
             -DWZ_BUILDMANIFEST=OFF \
             -DWZ_DISTRIBUTOR:STRING="android-port" \
             "-DCMAKE_INSTALL_PREFIX:PATH=${{ github.workspace }}/staged" \
-            "${{ github.workspace }}/src"
+            "${{ github.workspace }}/src" 2>&1 | tee configure.log
+          test ${PIPESTATUS[0]} -eq 0
 
       - name: Save vcpkg binary cache
         if: always()
@@ -107,10 +108,6 @@ jobs:
           cmake --build . --config ${BUILD_TYPE} 2>&1 | tee build.log | grep -E "error|FAILED|warning: .*android|^\[[0-9]+/[0-9]+\] Linking" || true
           test ${PIPESTATUS[0]} -eq 0
 
-      - name: Show build errors
-        if: failure()
-        working-directory: '${{ github.workspace }}/build'
-        run: grep -n -B2 -A12 -E "error:|FAILED:" build.log | head -300 || true
 
       - name: Stage game data
         working-directory: '${{ github.workspace }}/build'
@@ -145,7 +142,8 @@ jobs:
       - name: Gradle Build
         working-directory: '${{ github.workspace }}/src/platforms/android'
         run: |
-          gradle assembleDebug --no-daemon -PwzVersionCode=${{ github.run_number }} -PwzVersionName="android-${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          gradle assembleDebug --no-daemon -PwzVersionCode=${{ github.run_number }} -PwzVersionName="android-${{ github.run_number }}-$(git rev-parse --short HEAD)" 2>&1 | tee "${{ github.workspace }}/build/gradle.log"
+          test ${PIPESTATUS[0]} -eq 0
           cp app/build/outputs/apk/debug/app-debug.apk "${{ github.workspace }}/output/warzone2100-android-${{ github.run_number }}.apk"
           ls -la "${{ github.workspace }}/output"
 
@@ -156,3 +154,9 @@ jobs:
           path: '${{ github.workspace }}/output/*.apk'
           if-no-files-found: error
           compression-level: 0
+
+      # Publish the important part of any failure as check-run annotations (readable via the public API)
+      - name: Report failure details
+        if: failure()
+        working-directory: '${{ github.workspace }}/build'
+        run: python3 "${{ github.workspace }}/src/platforms/android/ci_report_failure.py" "${{ github.workspace }}/build"
