@@ -57,7 +57,6 @@
 static wzapi::scripting_instance *breakAI = nullptr;
 static wzapi::scripting_instance *breakCommander = nullptr; // carries out typed commands
 static std::string breakAIName;
-static bool commandBoxOpen = false;
 
 static const char *COMMANDER_SCRIPT = "multiplay/script/takeabreak_commander.js";
 
@@ -89,7 +88,6 @@ bool takeABreakActive()
 		// the game ended / scripts were shut down
 		breakAI = nullptr;
 		breakCommander = nullptr;
-		commandBoxOpen = false;
 	}
 	return breakAI != nullptr;
 }
@@ -155,7 +153,6 @@ bool takeABreakStart()
 		debug(LOG_ERROR, "Failed to load %s", COMMANDER_SCRIPT);
 	}
 	announce(astringf(_("%s is taking a break - the %s AI is playing for them."), getPlayerName(selectedPlayer), aiDisplayName.c_str()));
-	commandBoxOpen = false;
 	rebuildBanner();
 	return true;
 }
@@ -174,7 +171,6 @@ void takeABreakStop()
 		unloadPlayerScript(breakCommander);
 	}
 	breakCommander = nullptr;
-	commandBoxOpen = false;
 	announce(astringf(_("%s is back in control."), getPlayerName(selectedPlayer)));
 	rebuildBanner();
 }
@@ -185,7 +181,6 @@ void takeABreakSendCommand(const std::string &command)
 	{
 		return;
 	}
-	addConsoleMessage(astringf(_("You: %s"), command.c_str()).c_str(), DEFAULT_JUSTIFY, selectedPlayer);
 	if (breakCommander && isPlayerScriptLoaded(breakCommander))
 	{
 		breakCommander->handle_eventChat(selectedPlayer, selectedPlayer, command.c_str());
@@ -272,49 +267,32 @@ static void rebuildBanner()
 	auto form = std::make_shared<IntFormTransparent>();
 	form->id = IDTAKEABREAK_FORM;
 	psWScreen->psForm->attach(form);
-	const bool showCommandBox = commandBoxOpen;
-	form->setCalcLayout([showCommandBox](WIDGET *psWidget) {
+	form->setCalcLayout([](WIDGET *psWidget) {
 		const int w = std::min<int>(static_cast<int>(screenWidth) - 40, 620);
-		const int h = showCommandBox ? (34 * 2 + 6) : 34;
+		const int h = 34 * 2 + 6;
 		psWidget->setGeometry((static_cast<int>(screenWidth) - w) / 2, 64, w, h);
 	});
 	const int formW = std::min<int>(static_cast<int>(screenWidth) - 40, 620);
-	const int commandW = 120;
 
 	addBannerButton(form, WzString::fromUtf8(astringf(_("%s AI is playing for you - tap to take back control"), breakAIName.c_str())),
-		[]() { takeABreakStop(); }, 0, 0, formW - commandW - gap, bannerH);
-	addBannerButton(form, WzString::fromUtf8(commandBoxOpen ? _("Close") : _("Command AI")),
-		[]() { commandBoxOpen = !commandBoxOpen; rebuildBanner(); }, formW - commandW, 0, commandW, bannerH);
+		[]() { takeABreakStop(); }, 0, 0, formW, bannerH);
 
-	if (commandBoxOpen)
+	// command buttons
+	struct CommandButton { const char *label; const char *command; };
+	static const CommandButton commands[] = {
+		{ N_("Fortify"), "build defenses" },
+		{ N_("Research"), "research" },
+		{ N_("Build Units"), "build units" },
+		{ N_("Oil"), "build oil" },
+		{ N_("Attack"), "attack" },
+		{ N_("Retreat"), "retreat" },
+	};
+	const int count = static_cast<int>(sizeof(commands) / sizeof(commands[0]));
+	const int buttonW = (formW - gap * (count - 1)) / count;
+	for (int i = 0; i < count; ++i)
 	{
-		const int sendW = 90;
-		auto editBox = std::make_shared<W_EDITBOX>();
-		form->attach(editBox);
-		editBox->setGeometry(0, bannerH + gap, formW - sendW - gap, bannerH);
-		editBox->setMaxStringSize(120);
-		editBox->setPlaceholder(_("Tell the AI what to do - ex. build defenses, build 5 units, attack (type help)"));
-		std::weak_ptr<W_EDITBOX> weakEditBox = editBox;
-		auto send = [weakEditBox]() {
-			if (auto box = weakEditBox.lock())
-			{
-				const std::string text = box->getString().toUtf8();
-				box->setString("");
-				takeABreakSendCommand(text);
-			}
-		};
-		editBox->setOnReturnHandler([send](W_EDITBOX&) { widgScheduleTask(send); });
-		addBannerButton(form, WzString::fromUtf8(_("Send")), send, formW - sendW, bannerH + gap, sendW, bannerH);
-
-		// focus the box so the keyboard comes up
-		widgScheduleTask([weakEditBox]() {
-			if (auto box = weakEditBox.lock())
-			{
-				W_CONTEXT context = W_CONTEXT::ZeroContext();
-				context.mx = mouseX();
-				context.my = mouseY();
-				box->simulateClick(&context, true);
-			}
-		});
+		const std::string command = commands[i].command;
+		addBannerButton(form, WzString::fromUtf8(gettext(commands[i].label)),
+			[command]() { takeABreakSendCommand(command); }, i * (buttonW + gap), bannerH + gap, buttonW, bannerH);
 	}
 }

@@ -87,9 +87,13 @@ const std::vector<GuidePage> &guidePages()
 		     "Tap the banner at the top of the screen to take back control.\n\n"
 		     "Choose which AI plays for you, and how well it plays, in Options > Interface > Take a Break.") },
 		{ N_("Commanding the AI"),
-		  N_("While the AI plays for you, tap Command AI and type what you want:\n\n"
-		     "build defenses, build 5 units, build cyborgs, build trucks, build oil, attack, retreat, status\n\n"
-		     "Type help for the full list. The AI keeps playing in between, so it may re-task units later.") },
+		  N_("While the AI plays for you, use the buttons under the banner to tell it what to focus on:\n\n"
+		     "Fortify - build the strongest defenses toward the enemy.\n"
+		     "Research - start upgrades in idle research facilities.\n"
+		     "Build Units - produce tanks with your best weapons.\n"
+		     "Oil - grab free oil resources.\n"
+		     "Attack / Retreat - send your army in, or bring it home.\n\n"
+		     "The AI keeps playing in between, so it may re-task units later.") },
 	};
 	return pages;
 }

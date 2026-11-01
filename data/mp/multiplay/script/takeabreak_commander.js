@@ -13,6 +13,7 @@
 //   build oil / derricks      - trucks build derricks on free oil (and power generators as needed)
 //   attack                    - all combat units attack the nearest enemy base
 //   retreat / defend          - all combat units return to base
+//   research                  - idle labs research upgrades (and a new lab is built if there are few)
 //   status                    - power, units and structures
 
 const CMD_TIMER_MS = 2500;
@@ -64,7 +65,7 @@ function handleCommand(raw)
 	}
 	if (/\b(help|commands|\?)\b/.test(text) || text === "?")
 	{
-		say("Commands: build defenses [n], build units [n], build cyborgs [n], build trucks [n], build oil, attack, retreat, status");
+		say("Commands: build defenses [n], build units [n], build cyborgs [n], build trucks [n], build oil, research, attack, retreat, status");
 	}
 	else if (/defen[cs]e|tower|bunker|hardpoint|turret/.test(text))
 	{
@@ -99,6 +100,10 @@ function handleCommand(raw)
 	else if (/retreat|fall back|defend|go home|return|regroup/.test(text))
 	{
 		retreat();
+	}
+	else if (/research|tech|upgrade|science/.test(text))
+	{
+		research();
 	}
 	else if (/status|report|how/.test(text))
 	{
@@ -410,6 +415,47 @@ function retreat()
 	const units = combatUnits();
 	units.forEach((d) => { orderDroid(d, DORDER_RTB); });
 	say("Pulling " + units.length + " unit(s) back to base.");
+}
+
+function research()
+{
+	const labs = enumStruct(me, RESEARCH_LAB).filter((l) => (l.status === BUILT && structureIdle(l)));
+	const available = enumResearch();
+	// upgrades first (weapons, armour, research speed, power), then anything cheap
+	const isUpgrade = (r) => /Upgrade|Damage|ROF|Acc|Metals|Armor|Armour|Cyborg-Metals|Power|Research|Struc-Materials|Defense-WallUpgrade/i.test(r.id);
+	available.sort((a, b) => {
+		const ua = isUpgrade(a) ? 0 : 1;
+		const ub = isUpgrade(b) ? 0 : 1;
+		if (ua !== ub)
+		{
+			return ua - ub;
+		}
+		return a.power - b.power;
+	});
+	let started = 0;
+	for (let i = 0; i < labs.length && i < available.length; ++i)
+	{
+		if (pursueResearch(labs[i], available[i].id))
+		{
+			++started;
+		}
+	}
+	// add a research facility if there are few
+	const labCount = enumStruct(me, RESEARCH_LAB).length;
+	if (labCount < 5 && isStructureAvailable("A0ResearchFacility", me))
+	{
+		const workers = freeTrucks(1);
+		if (workers.length > 0)
+		{
+			const base = baseLocation();
+			const pos = pickStructLocation(workers[0], "A0ResearchFacility", base.x, base.y);
+			if (pos && orderDroidBuild(workers[0], DORDER_BUILD, "A0ResearchFacility", pos.x, pos.y))
+			{
+				say("Building another research facility.");
+			}
+		}
+	}
+	say(started > 0 ? ("Started " + started + " research project(s), upgrades first.") : (labs.length === 0 ? "All research facilities are busy." : "Nothing new to research right now."));
 }
 
 function status()
