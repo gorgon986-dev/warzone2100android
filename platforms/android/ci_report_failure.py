@@ -20,7 +20,7 @@ def tail(path, n):
 def add(title, lines):
     text = "\n".join(lines).strip()
     if text:
-        chunks.append((title, text[-6000:]))
+        chunks.append((title, text[-3500:]))
 
 
 # 1. Compile / link errors
@@ -42,9 +42,15 @@ if os.path.exists(blog):
 clog = os.path.join(build, "configure.log")
 if os.path.exists(clog):
     text = open(clog, errors="replace").read()
-    add("Configure (tail)", text.splitlines()[-60:])
-    for logpath in sorted(set(re.findall(r"(/\S+/buildtrees/\S+\.log)", text)))[:4]:
-        add("vcpkg: " + os.path.basename(logpath), tail(logpath, 80))
+    clines = text.splitlines()
+    errs = [i for i, l in enumerate(clines) if re.search(r"CMake Error|error:|Error:", l)]
+    for n, i in enumerate(errs[:4]):
+        add("Configure error %d" % (n + 1), clines[max(0, i - 3):i + 25])
+    if not errs:
+        add("Configure (tail)", clines[-25:])
+    logs = [p for p in sorted(set(re.findall(r"(/\S+/buildtrees/\S+\.log)", text))) if "cmake-get-vars" not in p]
+    for logpath in logs[:3]:
+        add("vcpkg: " + os.path.basename(logpath), tail(logpath, 40))
 
 # 3. Gradle
 add("Gradle (tail)", tail(os.path.join(build, "gradle.log"), 80))
