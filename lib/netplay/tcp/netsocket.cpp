@@ -850,7 +850,7 @@ net::result<SocketAddress*> resolveHost(const char *host, unsigned int port)
 	hint.ai_family    = AF_UNSPEC;
 	hint.ai_socktype  = SOCK_STREAM;
 	hint.ai_protocol  = 0;
-#ifdef AI_V4MAPPED
+#if defined(AI_V4MAPPED) && !defined(__ANDROID__) // Android's getaddrinfo rejects AI_V4MAPPED with EAI_BADFLAGS
 	flags             |= AI_V4MAPPED;
 #endif
 #ifdef AI_ADDRCONFIG
