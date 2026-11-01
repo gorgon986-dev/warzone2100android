@@ -2746,6 +2746,11 @@ static TerrainShaderQuality determineDefaultTerrainQuality()
 	// Based on system properties, determine a reasonable default (for performance reasons)
 	// (Uses a heuristic based on system RAM, graphics renderer, and estimated VRAM)
 
+#if defined(__ANDROID__)
+	// Phones / tablets: "Normal" terrain (the high-quality mode is heavy on mobile GPUs and memory)
+	return TerrainShaderQuality::MEDIUM;
+#endif
+
 	// If <= 8 GiB system RAM, default to medium ("normal")
 	auto systemRAMinMiB = wzGetCurrentSystemRAM();
 	if (systemRAMinMiB <= 8192)

@@ -15,6 +15,7 @@
 //   retreat / defend          - all combat units return to base
 //   research                  - idle labs research upgrades (and a new lab is built if there are few)
 //   status                    - power, units and structures
+//   auto on / auto off        - the commander decides on its own which of the above helps most
 
 const CMD_TIMER_MS = 2500;
 
@@ -22,14 +23,28 @@ var pendingTanks = 0;
 var pendingCyborgs = 0;
 var pendingTrucks = 0;
 
+// Auto mode: every so often, decide which of the commands would help most right now
+const AUTO_TIMER_MS = 15000;
+var autoMode = false;
+var lastAutoAttack = 0;
+var lastAutoFortify = 0;
+
+var autoLog = null; // collects messages during an auto tick
+
 function say(msg)
 {
+	if (autoLog !== null)
+	{
+		autoLog.push(msg);
+		return;
+	}
 	console("[AI] " + msg);
 }
 
 function eventGameInit()
 {
 	setTimer("commanderTick", CMD_TIMER_MS);
+	setTimer("autoTick", AUTO_TIMER_MS);
 }
 
 function eventStartLevel()
@@ -63,9 +78,18 @@ function handleCommand(raw)
 	{
 		return;
 	}
-	if (/\b(help|commands|\?)\b/.test(text) || text === "?")
+	if (/^auto/.test(text))
 	{
-		say("Commands: build defenses [n], build units [n], build cyborgs [n], build trucks [n], build oil, research, attack, retreat, status");
+		autoMode = /off|stop|disable/.test(text) ? false : (/on|start|enable/.test(text) ? true : !autoMode);
+		say(autoMode ? "Auto: I'll decide what to focus on (defenses, research, units, oil, attacks)." : "Auto off.");
+		if (autoMode)
+		{
+			autoTick();
+		}
+	}
+	else if (/\b(help|commands|\?)\b/.test(text) || text === "?")
+	{
+		say("Commands: build defenses [n], build units [n], build cyborgs [n], build trucks [n], build oil, research, attack, retreat, status, auto on/off");
 	}
 	else if (/defen[cs]e|tower|bunker|hardpoint|turret/.test(text))
 	{
@@ -522,5 +546,105 @@ function commanderTick()
 				--pendingCyborgs;
 			}
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// auto mode
+
+function enemyUnitsNear(pos, radius)
+{
+	let count = 0;
+	for (let p = 0; p < maxPlayers; ++p)
+	{
+		if (!isEnemy(p))
+		{
+			continue;
+		}
+		count += enumRange(pos.x, pos.y, radius, p, false).filter((o) => (o.type === DROID)).length;
+	}
+	return count;
+}
+
+function freeOilNear(pos, radius)
+{
+	return enumFeature(ALL_PLAYERS, "OilResource").filter((o) => (distBetweenTwoPoints(pos.x, pos.y, o.x, o.y) <= radius)).length;
+}
+
+function autoTick()
+{
+	if (!autoMode)
+	{
+		return;
+	}
+	autoLog = [];
+	try
+	{
+		autoDecide();
+	}
+	finally
+	{
+		// only report things that actually happened
+		const done = autoLog.filter((m) => !/^(No |Nothing|All research|I have no|I can't|Couldn't|I don't)/.test(m));
+		autoLog = null;
+		if (done.length > 0)
+		{
+			console("[AI auto] " + done.join(" "));
+		}
+	}
+}
+
+function autoDecide()
+{
+	const base = baseLocation();
+	const threat = enemyUnitsNear(base, 14);
+	const army = combatUnits().length;
+
+	// 1. under attack: bring the army home and fortify
+	if (threat >= 3)
+	{
+		retreat();
+		if (gameTime - lastAutoFortify > 45000)
+		{
+			lastAutoFortify = gameTime;
+			buildDefenses(2);
+		}
+		return;
+	}
+
+	// 2. keep the economy growing
+	if (trucks().length > 0 && freeOilNear(base, 30) > 0 && countStruct("A0ResourceExtractor") < 40)
+	{
+		buildOil();
+	}
+
+	// 3. keep the labs busy
+	const idleLabs = enumStruct(me, RESEARCH_LAB).filter((l) => (l.status === BUILT && structureIdle(l)));
+	if (idleLabs.length > 0)
+	{
+		research();
+	}
+
+	// 4. spend spare power on units (and trucks if few)
+	if (trucks().length < 4 && pendingTrucks === 0)
+	{
+		pendingTrucks = 2;
+	}
+	if (playerPower(me) > 500 && pendingTanks < 3)
+	{
+		pendingTanks += 3;
+	}
+
+	// 5. attack with a big enough army (not too often)
+	if (army >= 20 && gameTime - lastAutoAttack > 120000)
+	{
+		lastAutoAttack = gameTime;
+		attack();
+	}
+	// 6. a little extra defense now and then
+	else if (gameTime - lastAutoFortify > 180000 && playerPower(me) > 800)
+	{
+		lastAutoFortify = gameTime;
+		buildDefenses(1);
 	}
 }

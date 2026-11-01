@@ -319,6 +319,10 @@ unsigned int war_getTouchButtonScale(); // percent, size of the on-screen touch 
 void war_setTouchButtonScale(unsigned int val);
 bool war_getTouchGuideSeen(); // whether the touch controls guide was shown on first launch
 void war_setTouchGuideSeen(bool val);
+int war_getFrameRateCap(); // frames per second (0 = up to the display's refresh rate); applied through vsync
+void war_setFrameRateCap(int fps);
+int war_getMobileDefaultsVersion(); // which set of mobile-friendly graphics defaults has been applied (Android)
+void war_setMobileDefaultsVersion(int version);
 std::string war_getTakeABreakAI(); // AI script (ex. "nexus.js") for Take a Break; empty = default skirmish AI
 void war_setTakeABreakAI(const std::string& val);
 int war_getTakeABreakDifficulty(); // AIDifficulty value

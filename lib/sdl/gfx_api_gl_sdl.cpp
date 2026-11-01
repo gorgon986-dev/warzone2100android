@@ -18,6 +18,9 @@
 */
 
 #include "lib/framework/frame.h"
+#include "src/warzoneconfig.h"
+#include <cmath>
+#include <algorithm>
 #include "gfx_api_gl_sdl.h"
 #include <SDL3/SDL_opengl.h>
 #include <SDL3/SDL_timer.h>
@@ -346,6 +349,8 @@ gfx_api::context::swap_interval_mode from_sdl_swap_interval(int swapInterval)
 			return gfx_api::context::swap_interval_mode::immediate;
 		case 1:
 			return gfx_api::context::swap_interval_mode::vsync;
+		case 2: case 3: case 4: // capped frame rate (still vsync)
+			return gfx_api::context::swap_interval_mode::vsync;
 		case -1:
 			return gfx_api::context::swap_interval_mode::adaptive_vsync;
 	}
@@ -360,6 +365,20 @@ bool sdl_OpenGL_Impl::setSwapInterval(gfx_api::context::swap_interval_mode mode)
 		debug(LOG_3D, "Unsupported swap_interval_mode for SDL OpenGL backend: %d", to_int(mode));
 		return false;
 	}
+#if defined(__ANDROID__)
+	// Frame rate cap (Options > Graphics > Frame Rate Limit): with vsync on, present every Nth refresh,
+	// ex. 60 FPS on a 120 Hz screen = every 2nd refresh. Cooler phone, longer battery life.
+	if (interval == 1)
+	{
+		const int cap = war_getFrameRateCap();
+		const SDL_DisplayMode *displayMode = (window) ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : nullptr;
+		if (cap > 0 && displayMode && displayMode->refresh_rate > 0.f)
+		{
+			interval = std::max(1, static_cast<int>(std::lround(displayMode->refresh_rate / static_cast<float>(cap))));
+			debug(LOG_3D, "Frame rate cap %d FPS on a %.0f Hz display: swap interval %d", cap, displayMode->refresh_rate, interval);
+		}
+	}
+#endif
 	if (!SDL_GL_SetSwapInterval(interval))
 	{
 		debug(LOG_WARNING, "SDL_GL_SetSwapInterval(%d) failed with error (%s)", interval, SDL_GetError());

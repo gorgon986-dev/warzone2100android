@@ -40,6 +40,12 @@ public class WzActivity extends SDLActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         try {
+            // Steadier clocks over long sessions (on devices that support it) instead of boost-then-throttle
+            getWindow().setSustainedPerformanceMode(true);
+        } catch (Exception e) {
+            Log.w(TAG, "Sustained performance mode not available", e);
+        }
+        try {
             // Needed to discover LAN games
             WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             if (wifi != null) {

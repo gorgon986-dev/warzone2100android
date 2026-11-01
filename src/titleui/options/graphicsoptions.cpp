@@ -789,6 +789,35 @@ std::shared_ptr<OptionsForm> makeGraphicsOptionsForm()
 		);
 		result->addOption(optionInfo, valueChanger, true);
 	}
+#if defined(__ANDROID__)
+	{
+		auto optionInfo = OptionInfo("gfx.frameRateCap", N_("Frame Rate Limit"), N_("A lower limit keeps the phone cooler and the battery lasting longer (needs Vertical Sync on)"));
+		auto valueChanger = OptionsDropdown<int>::make(
+			[]() {
+				OptionChoices<int> result;
+				result.choices = {
+					{ _("30 FPS"), _("Longest battery life"), 30 },
+					{ _("60 FPS"), _("Recommended"), 60 },
+					{ _("Display Maximum"), _("Smoothest (90 / 120 Hz screens), uses the most battery"), 0 },
+				};
+				if (!result.setCurrentIdxForValue(war_getFrameRateCap()))
+				{
+					result.setCurrentIdxForValue(60);
+				}
+				return result;
+			},
+			[](const auto& newValue) -> bool {
+				war_setFrameRateCap(newValue);
+				// re-apply the current vsync mode, which applies the cap
+				gfx_api::context::get().setSwapInterval(to_swap_mode(war_GetVsync()), []() {
+					wzPostChangedSwapInterval();
+				});
+				return true;
+			}, false
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+#endif
 	{
 		auto optionInfo = OptionInfo("gfx.vsync", N_("Vertical Sync"), "");
 		auto valueChanger = OptionsDropdown<gfx_api::context::swap_interval_mode>::make(

@@ -135,6 +135,12 @@ struct WARZONE_GLOBALS
 	uint8_t optionsButtonVisibility = 100;
 	unsigned int touchButtonScale = 100;
 	bool touchGuideSeen = false;
+#if defined(__ANDROID__)
+	int frameRateCap = 60; // phones: cooler and longer battery life than 90/120 Hz
+#else
+	int frameRateCap = 0;
+#endif
+	int mobileDefaultsVersion = 0;
 	std::string takeABreakAI;
 	int takeABreakDifficulty = 3; // AIDifficulty::HARD
 
@@ -1074,6 +1080,26 @@ void war_setGroupsMenuEnabled(bool enabled)
 void war_runtimeOnlySetAllowVulkanImplicitLayers(bool allowed) // not persisted to config
 {
 	warGlobs.allowVulkanImplicitLayers = allowed;
+}
+
+int war_getFrameRateCap()
+{
+	return warGlobs.frameRateCap;
+}
+
+void war_setFrameRateCap(int fps)
+{
+	warGlobs.frameRateCap = std::max(0, std::min(fps, 240));
+}
+
+int war_getMobileDefaultsVersion()
+{
+	return warGlobs.mobileDefaultsVersion;
+}
+
+void war_setMobileDefaultsVersion(int version)
+{
+	warGlobs.mobileDefaultsVersion = version;
 }
 
 bool war_getTouchGuideSeen()

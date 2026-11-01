@@ -88,9 +88,10 @@ const std::vector<GuidePage> &guidePages()
 		     "Choose which AI plays for you, and how well it plays, in Options > Interface > Take a Break.") },
 		{ N_("Commanding the AI"),
 		  N_("While the AI plays for you, use the buttons under the banner to tell it what to focus on:\n\n"
+		     "Auto - (lights up) the AI decides on its own what to focus on.\n"
 		     "Fortify - build the strongest defenses toward the enemy.\n"
 		     "Research - start upgrades in idle research facilities.\n"
-		     "Build Units - produce tanks with your best weapons.\n"
+		     "Units - produce tanks with your best weapons.\n"
 		     "Oil - grab free oil resources.\n"
 		     "Attack / Retreat - send your army in, or bring it home.\n\n"
 		     "The AI keeps playing in between, so it may re-task units later.") },

@@ -627,6 +627,8 @@ bool loadConfig()
 	war_SetGamepadShowLayoutOnConnect(iniGetBool("gamepadShowLayoutOnConnect", true).value());
 	war_SetGamepadLayoutSeenDevices(iniGetString("gamepadLayoutSeenDevices", "").value());
 	war_setTouchGuideSeen(iniGetBool("touchGuideSeen", false).value());
+	war_setFrameRateCap(iniGetInteger("frameRateCap", war_getFrameRateCap()).value());
+	war_setMobileDefaultsVersion(iniGetInteger("mobileDefaultsVersion", 0).value());
 	war_setTakeABreakAI(iniGetString("takeABreakAI", "").value());
 	war_setTakeABreakDifficulty(iniGetInteger("takeABreakDifficulty", war_getTakeABreakDifficulty()).value());
 	auto intOnScreenKeyboardModeValue = iniGetInteger("onScreenKeyboardMode", static_cast<int>(VirtualKeyboardMode::Automatic)).value();
@@ -954,6 +956,23 @@ bool loadConfig()
 	war_setLobbyDisableIPv6(iniGetBool("lobbyDisableIPv6", war_getLobbyDisableIPv6()).value());
 	war_setLobbyFilterIPv6Only(iniGetBool("lobbyFilterIPv6Only", war_getLobbyFilterIPv6Only()).value());
 
+#if defined(__ANDROID__)
+	// One-time mobile-friendly graphics defaults (also applied to existing installs, once).
+	// Players can change any of these afterwards in Options > Graphics.
+	static const int MOBILE_DEFAULTS_VERSION = 1;
+	if (war_getMobileDefaultsVersion() < MOBILE_DEFAULTS_VERSION)
+	{
+		debug(LOG_INFO, "Applying mobile graphics defaults (v%d)", MOBILE_DEFAULTS_VERSION);
+		war_setRenderResolutionPercent(75);                      // render the 3D world at 75%...
+		war_setSceneUpscalingMode(SCENE_UPSCALING_MODE::FSR1);   // ...and upscale it sharply with FSR 1
+		setTerrainShaderQuality(TerrainShaderQuality::MEDIUM);   // "Normal" terrain (no normal / specular maps)
+		war_setAntialiasing(0);                                  // no MSAA
+		war_setHdrLightingMode(HDR_LIGHTING_MODE::OFF);          // no floating-point scene buffer
+		war_setFrameRateCap(60);
+		war_setMobileDefaultsVersion(MOBILE_DEFAULTS_VERSION);
+	}
+#endif
+
 	ActivityManager::instance().endLoadingSettings();
 	return true;
 }
@@ -1071,6 +1090,8 @@ bool saveConfig()
 	iniSetBool("gamepadShowLayoutOnConnect", war_GetGamepadShowLayoutOnConnect());
 	iniSetString("gamepadLayoutSeenDevices", war_GetGamepadLayoutSeenDevices());
 	iniSetBool("touchGuideSeen", war_getTouchGuideSeen());
+	iniSetInteger("frameRateCap", war_getFrameRateCap());
+	iniSetInteger("mobileDefaultsVersion", war_getMobileDefaultsVersion());
 	iniSetString("takeABreakAI", war_getTakeABreakAI());
 	iniSetInteger("takeABreakDifficulty", war_getTakeABreakDifficulty());
 	iniSetInteger("onScreenKeyboardMode", static_cast<int>(virtualKeyboardGetMode()));

@@ -30,6 +30,8 @@
 
 #include "takeabreak.h"
 
+#include <functional>
+
 #include "lib/framework/frame.h"
 #include "lib/framework/stdio_ext.h"
 #include "lib/ivis_opengl/screen.h"
@@ -57,6 +59,7 @@
 static wzapi::scripting_instance *breakAI = nullptr;
 static wzapi::scripting_instance *breakCommander = nullptr; // carries out typed commands
 static std::string breakAIName;
+static bool autoModeOn = false;
 
 static const char *COMMANDER_SCRIPT = "multiplay/script/takeabreak_commander.js";
 
@@ -141,6 +144,7 @@ bool takeABreakStart()
 
 	breakAI = instance;
 	breakAIName = aiDisplayName;
+	autoModeOn = false;
 
 	breakCommander = loadPlayerScript(WzString(COMMANDER_SCRIPT), selectedPlayer, difficulty, wzapi::ScriptBinding::PlayerAI);
 	if (breakCommander)
@@ -171,6 +175,7 @@ void takeABreakStop()
 		unloadPlayerScript(breakCommander);
 	}
 	breakCommander = nullptr;
+	autoModeOn = false;
 	announce(astringf(_("%s is back in control."), getPlayerName(selectedPlayer)));
 	rebuildBanner();
 }
@@ -200,9 +205,10 @@ public:
 		const int x0 = x() + xOffset;
 		const int y0 = y() + yOffset;
 		const bool hover = isMouseOverWidget() || (state & WBUT_DOWN) != 0;
+		const bool on = isOn && isOn();
 		RenderWindowFrame(FRAME_NORMAL, x0, y0, width(), height());
 		PIELIGHT fill = WZCOL_FORM_HILITE;
-		fill.byte.a = hover ? 200 : 120;
+		fill.byte.a = (hover || on) ? 200 : 120;
 		pie_UniTransBoxFill(static_cast<float>(x0 + 3), static_cast<float>(y0 + 3), static_cast<float>(x0 + width() - 3), static_cast<float>(y0 + height() - 3), fill);
 		if (lastText != pText)
 		{
@@ -211,18 +217,20 @@ public:
 		}
 		const int fx = x0 + (width() - wzText.width()) / 2;
 		const int fy = y0 + (height() - wzText.lineSize()) / 2 - wzText.aboveBase();
-		wzText.render(fx, fy, hover ? WZCOL_TEXT_BRIGHT : WZCOL_YELLOW);
+		wzText.render(fx, fy, on ? WZCOL_WHITE : (hover ? WZCOL_TEXT_BRIGHT : WZCOL_YELLOW));
 	}
+	std::function<bool()> isOn;
 private:
 	WzText wzText;
 	WzString lastText;
 };
 }
 
-static void addBannerButton(const std::shared_ptr<WIDGET> &parent, const WzString &text, const std::function<void()> &onClick, int x, int y, int w, int h)
+static void addBannerButton(const std::shared_ptr<WIDGET> &parent, const WzString &text, const std::function<void()> &onClick, int x, int y, int w, int h, std::function<bool()> isOn = nullptr)
 {
 	auto button = std::make_shared<TakeBackControlButton>();
 	parent->attach(button);
+	button->isOn = std::move(isOn);
 	button->setString(text);
 	button->setGeometry(x, y, w, h);
 	button->addOnClickHandler([onClick](W_BUTTON&) {
@@ -282,17 +290,21 @@ static void rebuildBanner()
 	static const CommandButton commands[] = {
 		{ N_("Fortify"), "build defenses" },
 		{ N_("Research"), "research" },
-		{ N_("Build Units"), "build units" },
+		{ N_("Units"), "build units" },
 		{ N_("Oil"), "build oil" },
 		{ N_("Attack"), "attack" },
 		{ N_("Retreat"), "retreat" },
 	};
-	const int count = static_cast<int>(sizeof(commands) / sizeof(commands[0]));
+	const int count = static_cast<int>(sizeof(commands) / sizeof(commands[0])) + 1; // + Auto
 	const int buttonW = (formW - gap * (count - 1)) / count;
-	for (int i = 0; i < count; ++i)
+	// Auto: the commander decides on its own what to focus on (lit while on)
+	addBannerButton(form, WzString::fromUtf8(_("Auto")),
+		[]() { autoModeOn = !autoModeOn; takeABreakSendCommand(autoModeOn ? "auto on" : "auto off"); },
+		0, bannerH + gap, buttonW, bannerH, []() { return autoModeOn; });
+	for (int i = 1; i < count; ++i)
 	{
-		const std::string command = commands[i].command;
-		addBannerButton(form, WzString::fromUtf8(gettext(commands[i].label)),
+		const std::string command = commands[i - 1].command;
+		addBannerButton(form, WzString::fromUtf8(gettext(commands[i - 1].label)),
 			[command]() { takeABreakSendCommand(command); }, i * (buttonW + gap), bannerH + gap, buttonW, bannerH);
 	}
 }
