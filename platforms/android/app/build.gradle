@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+}
+
+// SDL's Java sources must exactly match the SDL version linked into libmain.so.
+// The CI build copies them into ../sdl-java (override with -PsdlJavaDir=...).
+def sdlJavaDir = project.hasProperty('sdlJavaDir') ? project.property('sdlJavaDir') : "${rootDir}/sdl-java"
+def wzVersionCode = project.hasProperty('wzVersionCode') ? project.property('wzVersionCode').toInteger() : 1
+def wzVersionName = project.hasProperty('wzVersionName') ? project.property('wzVersionName') : "dev"
+
+android {
+    namespace = "io.github.gorgon986dev.wz2100"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "io.github.gorgon986dev.wz2100"
+        minSdk 28
+        targetSdk 35
+        versionCode wzVersionCode
+        versionName wzVersionName
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += [sdlJavaDir]
+        }
+    }
+
+    androidResources {
+        // Game data archives are already compressed; storing them uncompressed makes first-run extraction much faster
+        noCompress += ['wz', 'ogg', 'opus', 'ttf', 'otf']
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    signingConfigs {
+        // A fixed (public, non-secret) debug key, so each new test build installs over the previous one
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+}

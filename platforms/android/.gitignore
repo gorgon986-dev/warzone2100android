@@ -1,0 +1,8 @@
+# Filled in by the CI build (see .github/workflows/CI_android.yml)
+app/src/main/jniLibs/
+app/src/main/assets/
+sdl-java/
+.gradle/
+build/
+app/build/
+local.properties

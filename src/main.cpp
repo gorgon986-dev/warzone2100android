@@ -539,9 +539,18 @@ static void initialize_ConfigDir()
 /*!
  * Initialize the PhysicsFS library.
  */
+#if defined(__ANDROID__)
+const void* wzAndroidGetPhysFSInitArg(); // lib/sdl/main_sdl.cpp
+void wzAndroidDebugCallback(void **, const char *outputBuffer, code_part part); // lib/sdl/main_sdl.cpp
+#endif
+
 static void initialize_PhysicsFS(const char *argv_0)
 {
+#if defined(__ANDROID__)
+	int result = PHYSFS_init(static_cast<const char *>(wzAndroidGetPhysFSInitArg()));
+#else
 	int result = PHYSFS_init(argv_0);
+#endif
 
 	if (!result)
 	{
@@ -1996,6 +2005,9 @@ int realmain(int argc, char *argv[])
 	debug_register_callback(debug_callback_emscripten_log, nullptr, nullptr, nullptr);
 #endif
 	debug_register_callback(debug_callback_stderr, nullptr, nullptr, nullptr);
+#if defined(__ANDROID__)
+	debug_register_callback(wzAndroidDebugCallback, nullptr, nullptr, nullptr);
+#endif
 #if defined(_WIN32) && defined(DEBUG_INSANE)
 	debug_register_callback(debug_callback_win32debug, NULL, NULL, NULL);
 #endif // WZ_OS_WIN && DEBUG_INSANE

@@ -97,6 +97,28 @@ int main(int argc, char *argv[])
 	return realmain(argc, argv);
 }
 
+#if defined(__ANDROID__)
+#include <physfs.h>
+#include <android/log.h>
+// On Android, PhysFS expects PHYSFS_init()'s argument to be a PHYSFS_AndroidInit* (not argv[0])
+const void* wzAndroidGetPhysFSInitArg()
+{
+	static PHYSFS_AndroidInit ainit;
+	ainit.jnienv = SDL_GetAndroidJNIEnv();
+	ainit.context = SDL_GetAndroidActivity();
+	return &ainit;
+}
+
+// Route debug output to logcat ("adb logcat -s warzone2100")
+void wzAndroidDebugCallback(void **, const char *outputBuffer, code_part part)
+{
+	int prio = ANDROID_LOG_INFO;
+	if (part == LOG_ERROR || part == LOG_FATAL) { prio = ANDROID_LOG_ERROR; }
+	else if (part == LOG_WARNING) { prio = ANDROID_LOG_WARN; }
+	__android_log_write(prio, "warzone2100", outputBuffer);
+}
+#endif
+
 // At this time, we only have 1 window.
 static SDL_Window *WZwindow = nullptr;
 static optional<video_backend> WZbackend = video_backend::vulkan;
@@ -562,6 +584,9 @@ std::vector<video_backend> wzAvailableGfxBackends()
 		availableBackends.push_back(video_backend::vulkan);
 #   	endif
 	}
+#elif defined(__ANDROID__)
+// ANDROID: OpenGL ES only (for now)
+	availableBackends.push_back(video_backend::opengles);
 #elif defined(WZ_OS_UNIX)
 // LINUX / UNIX:
 	// We'd *like* to default to Vulkan first here,

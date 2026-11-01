@@ -1,0 +1,158 @@
+name: Android
+
+on:
+  push:
+    branches:
+      - 'android-**'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_TYPE: Release
+  ANDROID_ABI: arm64-v8a
+  ANDROID_API: 28
+  VCPKG_TRIPLET: arm64-android
+  VCPKG_DEFAULT_HOST_TRIPLET: x64-linux
+  CMAKE_BUILD_PARALLEL_LEVEL: 4
+
+jobs:
+  android-apk:
+    name: 'APK (arm64-v8a)'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          path: 'src'
+
+      - name: Prepare Git Repo for autorevision
+        working-directory: '${{ github.workspace }}/src'
+        run: cmake -P .ci/githubactions/prepare_git_repo.cmake
+
+      - name: Init Git Submodules
+        working-directory: '${{ github.workspace }}/src'
+        run: git submodule update --init --recursive
+
+      - name: Prep Build Environment
+        run: |
+          sudo apt-get -u update
+          DEBIAN_FRONTEND=noninteractive sudo apt-get -y install cmake ninja-build git zip unzip gettext autoconf autoconf-archive automake libtool pkg-config python3-jinja2 nasm
+          mkdir -p "${{ github.workspace }}/build" "${{ github.workspace }}/staged" "${{ github.workspace }}/output" "${{ github.workspace }}/vcpkg-cache"
+          echo "ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME}" >> $GITHUB_ENV
+          echo "Using NDK: ${ANDROID_NDK_LATEST_HOME}"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache/restore@v4
+        with:
+          path: '${{ github.workspace }}/vcpkg-cache'
+          key: vcpkg-android-${{ env.VCPKG_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-android-${{ env.VCPKG_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-
+            vcpkg-android-${{ env.VCPKG_TRIPLET }}-
+
+      - name: CMake Configure
+        working-directory: '${{ github.workspace }}/build'
+        env:
+          VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/vcpkg-cache,readwrite'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git vcpkg
+          cmake -G Ninja \
+            -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+            "-DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake" \
+            -DVCPKG_TARGET_TRIPLET=${VCPKG_TRIPLET} \
+            -DVCPKG_MANIFEST_NO_DEFAULT_FEATURES=ON \
+            -DANDROID_ABI=${ANDROID_ABI} \
+            -DANDROID_PLATFORM=android-${ANDROID_API} \
+            -DANDROID_STL=c++_shared \
+            -DWZ_ENABLE_BACKEND_VULKAN=OFF \
+            -DENABLE_DOCS=OFF \
+            -DENABLE_NLS=OFF \
+            -DWZ_ENABLE_WARNINGS_AS_ERRORS=OFF \
+            -DWZ_BUILDMANIFEST=OFF \
+            -DWZ_DISTRIBUTOR:STRING="android-port" \
+            "-DCMAKE_INSTALL_PREFIX:PATH=${{ github.workspace }}/staged" \
+            "${{ github.workspace }}/src"
+
+      - name: Save vcpkg binary cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: '${{ github.workspace }}/vcpkg-cache'
+          key: vcpkg-android-${{ env.VCPKG_TRIPLET }}-${{ hashFiles('src/vcpkg.json') }}-${{ github.run_id }}
+
+      - name: Upload vcpkg logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vcpkg-logs
+          path: |
+            ${{ github.workspace }}/build/vcpkg/buildtrees/*/*.log
+            ${{ github.workspace }}/build/vcpkg-manifest-install.log
+          if-no-files-found: ignore
+
+      - name: CMake Build
+        working-directory: '${{ github.workspace }}/build'
+        run: |
+          cmake --build . --config ${BUILD_TYPE} 2>&1 | tee build.log | grep -E "error|FAILED|warning: .*android|^\[[0-9]+/[0-9]+\] Linking" || true
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Show build errors
+        if: failure()
+        working-directory: '${{ github.workspace }}/build'
+        run: grep -n -B2 -A12 -E "error:|FAILED:" build.log | head -300 || true
+
+      - name: Stage game data
+        working-directory: '${{ github.workspace }}/build'
+        run: |
+          cmake --install . --component Data
+          ls -la "${{ github.workspace }}/staged/share/warzone2100"
+          du -sh "${{ github.workspace }}/staged/share/warzone2100"
+
+      - name: Prepare Gradle project
+        working-directory: '${{ github.workspace }}/src/platforms/android'
+        run: |
+          # Native libraries
+          JNI="app/src/main/jniLibs/${ANDROID_ABI}"
+          mkdir -p "$JNI"
+          cp "${{ github.workspace }}/build/src/libmain.so" "$JNI/"
+          cp "${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$JNI/"
+          ls -la "$JNI"
+          # Game data
+          mkdir -p app/src/main/assets
+          cp -R "${{ github.workspace }}/staged/share/warzone2100" app/src/main/assets/data
+          # SDL Java sources must match the SDL version vcpkg built
+          SDL_VER=$(ls "${{ github.workspace }}/build/vcpkg_installed/vcpkg/info/" | sed -n 's/^sdl3_\([0-9.]*\)_.*/\1/p' | head -1)
+          echo "SDL version: ${SDL_VER}"
+          git clone --depth 1 -b "release-${SDL_VER}" https://github.com/libsdl-org/SDL.git /tmp/SDL
+          mkdir -p sdl-java
+          cp -R /tmp/SDL/android-project/app/src/main/java/org sdl-java/
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Gradle Build
+        working-directory: '${{ github.workspace }}/src/platforms/android'
+        run: |
+          gradle assembleDebug --no-daemon -PwzVersionCode=${{ github.run_number }} -PwzVersionName="android-${{ github.run_number }}-$(git rev-parse --short HEAD)"
+          cp app/build/outputs/apk/debug/app-debug.apk "${{ github.workspace }}/output/warzone2100-android-${{ github.run_number }}.apk"
+          ls -la "${{ github.workspace }}/output"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: warzone2100-android-apk
+          path: '${{ github.workspace }}/output/*.apk'
+          if-no-files-found: error
+          compression-level: 0
