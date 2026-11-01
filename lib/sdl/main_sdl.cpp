@@ -259,6 +259,7 @@ void* GetTextEventsOwner = nullptr;
 /* On-screen keyboard support */
 static uint32_t physicalKeyPressCount = 0;
 static bool lastPointerInputWasTouch = false;
+static bool virtualQueueModifier = false; // on-screen "Queue" toggle (acts like holding Shift)
 static bool systemScreenKeyboardSuppressed = false;
 
 #if SDL_VERSION_ATLEAST(3, 4, 12)
@@ -1738,6 +1739,10 @@ void inputRestoreMetaKeyState()
 bool keyDown(KEY_CODE code)
 {
 	ASSERT_OR_RETURN(false, code < KEY_MAXSCAN, "Invalid keycode of %d!", (int)code);
+	if (virtualQueueModifier && code == KEY_LSHIFT)
+	{
+		return true; // the on-screen "Queue" toggle acts like holding Shift
+	}
 	return (aKeyState[code].state != KEY_UP);
 }
 
@@ -1845,13 +1850,18 @@ float calculateEuclideanDistance(float x1, float y1, float x2, float y2)
 #endif
 
 #if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
-/* Touch -> mouse translation for touch-only devices (phones / tablets)
+/* Touch controls for touch-only devices (phones / tablets)
  *
- *  - Tap ........................ left click (select / give order / press button)
- *  - Drag with one finger ....... left-button drag (selection box, sliders, scrolling lists)
- *  - Long press ................. right click (deselect / cancel / context)
- *  - Tap with two fingers ....... right click
- *  - Two-finger drag / pinch .... pan / zoom the camera (handled by the gesture code below)
+ *  On the battlefield:
+ *  - One-finger drag ............ move the camera
+ *  - Tap ........................ left click (select / give order / place structure)
+ *  - Double tap on a unit ....... select all units of that type on screen
+ *  - Long press, then drag ...... selection box (or use the "Box" touch button first)
+ *  - Long press, then lift ...... right click (deselect / cancel)
+ *  - Two-finger tap ............. right click
+ *  - Two-finger drag / pinch .... pan / zoom (existing gesture code)
+ *  Over buttons, menus, and the minimap, a one-finger drag acts like a mouse drag
+ *  (sliders, scrolling lists, dragging the minimap view).
  *
  * SDL's own touch->mouse synthesis is disabled (SDL_HINT_TOUCH_MOUSE_EVENTS=0) so this is the only source.
  */
@@ -1860,7 +1870,7 @@ static void inputHandleMouseMotionEvent(SDL_MouseMotionEvent *motionEvent);
 
 namespace touchemu
 {
-	enum class State { Idle, Pending, Dragging, LongPressed, Multi };
+	enum class State { Idle, Pending, HoldArmed, Panning, Dragging, Multi, Ignore };
 	static State state = State::Idle;
 	static SDL_FingerID primaryId = 0;
 	static float downX = 0.f, downY = 0.f;   // window coordinates
@@ -1868,8 +1878,15 @@ namespace touchemu
 	static uint64_t downTicks = 0;
 	static uint64_t multiStartTicks = 0;
 	static float multiTravel = 0.f;
+	static bool boxSelectArmed = false;      // set by the "Box" touch button (one-shot)
+	static std::function<bool()> panPredicate;
 
-	static const uint64_t LONG_PRESS_MS = 450;
+	// A click is delivered over two frames (press now, release next frame),
+	// so game logic that checks for a press and then a release sees both.
+	struct PendingRelease { bool active = false; Uint8 button = 0; float x = 0.f, y = 0.f; bool skipThisFrame = false; };
+	static PendingRelease pendingRelease;
+
+	static const uint64_t LONG_PRESS_MS = 400;
 	static const uint64_t TWO_FINGER_TAP_MS = 300;
 
 	static void toWindowCoords(const SDL_TouchFingerEvent &e, float &x, float &y)
@@ -1911,11 +1928,53 @@ namespace touchemu
 		inputHandleMouseButtonEvent(&b);
 	}
 
+	static void flushPendingRelease()
+	{
+		if (pendingRelease.active)
+		{
+			mouseButton(pendingRelease.button, false, pendingRelease.x, pendingRelease.y);
+			pendingRelease.active = false;
+		}
+	}
+
 	static void click(Uint8 button, float x, float y)
 	{
+		flushPendingRelease();
 		mouseMove(x, y);
 		mouseButton(button, true, x, y);
-		mouseButton(button, false, x, y);
+		pendingRelease.active = true;
+		pendingRelease.button = button;
+		pendingRelease.x = x;
+		pendingRelease.y = y;
+		pendingRelease.skipThisFrame = true;
+	}
+
+	static bool shouldPanCamera()
+	{
+		if (boxSelectArmed) { return false; }
+		return panPredicate && panPredicate();
+	}
+
+	static void addPanDelta(float dxWindow, float dyWindow)
+	{
+		int w = 0, h = 0;
+		if (WZwindow) { SDL_GetWindowSize(WZwindow, &w, &h); }
+		if (w <= 0 || h <= 0) { return; }
+		// same units as the two-finger pan gesture: normalized delta * logical screen size
+		auto delta = panScreenPointsCumulative.value_or(PanGestureDeltaScreenPts{0.f, 0.f});
+		delta.deltaX += (dxWindow / static_cast<float>(w)) * static_cast<float>(screenWidth);
+		delta.deltaY += (dyWindow / static_cast<float>(h)) * static_cast<float>(screenHeight);
+		panScreenPointsCumulative = delta;
+		panActive = true;
+	}
+
+	static void startDrag(float x, float y)
+	{
+		flushPendingRelease();
+		state = State::Dragging;
+		boxSelectArmed = false; // one-shot
+		mouseButton(SDL_BUTTON_LEFT, true, downX, downY);
+		mouseMove(x, y);
 	}
 
 	// Called after the shared finger tracking (touchPoints) has been updated
@@ -1937,10 +1996,11 @@ namespace touchemu
 				downTicks = SDL_GetTicks();
 				mouseMove(x, y);
 			}
-			else if (state == State::Pending || state == State::LongPressed)
+			else if (state == State::Pending || state == State::HoldArmed || state == State::Panning)
 			{
-				// a second finger joined before anything was committed: camera gesture / two-finger tap
+				// a second finger joined: camera gesture / two-finger tap
 				state = State::Multi;
+				panActive = false;
 				multiStartTicks = SDL_GetTicks();
 				multiTravel = 0.f;
 			}
@@ -1954,19 +2014,41 @@ namespace touchemu
 				break;
 			}
 			if (e.fingerID != primaryId) { break; }
-			lastX = x; lastY = y;
-			if (state == State::Pending)
 			{
-				if (calculateEuclideanDistance(downX, downY, x, y) > slop())
+				const float prevX = lastX, prevY = lastY;
+				lastX = x; lastY = y;
+				const bool beyondSlop = calculateEuclideanDistance(downX, downY, x, y) > slop();
+				switch (state)
 				{
-					state = State::Dragging;
-					mouseButton(SDL_BUTTON_LEFT, true, downX, downY);
+				case State::Pending:
+					if (beyondSlop)
+					{
+						if (shouldPanCamera())
+						{
+							state = State::Panning;
+							addPanDelta(x - downX, y - downY);
+						}
+						else
+						{
+							startDrag(x, y);
+						}
+					}
+					break;
+				case State::HoldArmed:
+					if (beyondSlop)
+					{
+						startDrag(x, y); // long press + drag = selection box
+					}
+					break;
+				case State::Panning:
+					addPanDelta(x - prevX, y - prevY);
+					break;
+				case State::Dragging:
 					mouseMove(x, y);
+					break;
+				default:
+					break;
 				}
-			}
-			else if (state == State::Dragging)
-			{
-				mouseMove(x, y);
 			}
 			break;
 
@@ -1992,16 +2074,25 @@ namespace touchemu
 				if (fingers == 0) { state = State::Idle; }
 				break;
 			}
-			if (state == State::Pending && !cancelled)
+			switch (state)
 			{
-				click(SDL_BUTTON_LEFT, downX, downY);
-			}
-			else if (state == State::Dragging)
-			{
+			case State::Pending:
+				if (!cancelled) { click(SDL_BUTTON_LEFT, downX, downY); }
+				break;
+			case State::HoldArmed:
+				if (!cancelled) { click(SDL_BUTTON_RIGHT, downX, downY); }
+				break;
+			case State::Panning:
+				panActive = false;
+				break;
+			case State::Dragging:
 				mouseMove(lastX, lastY);
 				mouseButton(SDL_BUTTON_LEFT, false, lastX, lastY);
+				break;
+			default:
+				break;
 			}
-			state = (fingers == 0) ? State::Idle : State::LongPressed; // LongPressed == "ignore until all fingers are up"
+			state = (fingers == 0) ? State::Idle : State::Ignore;
 			break;
 		}
 		default:
@@ -2009,13 +2100,24 @@ namespace touchemu
 		}
 	}
 
-	// Called once per frame (long press has no event of its own)
+	// Called once per frame, before the game processes input
 	static void update()
 	{
+		if (pendingRelease.active)
+		{
+			if (pendingRelease.skipThisFrame)
+			{
+				pendingRelease.skipThisFrame = false;
+			}
+			else
+			{
+				flushPendingRelease();
+			}
+		}
 		if (state == State::Pending && (SDL_GetTicks() - downTicks) >= LONG_PRESS_MS)
 		{
-			state = State::LongPressed;
-			click(SDL_BUTTON_RIGHT, downX, downY);
+			// Long press: lift = right click, drag = selection box
+			state = State::HoldArmed;
 		}
 	}
 
@@ -2025,10 +2127,51 @@ namespace touchemu
 		{
 			mouseButton(SDL_BUTTON_LEFT, false, lastX, lastY);
 		}
+		flushPendingRelease();
+		panActive = false;
 		state = State::Idle;
 	}
 }
 #endif // WZ_CUSTOM_TOUCH_MOUSE_EMULATION
+
+// Touch control hooks used by the game's on-screen touch buttons (no-ops without touch emulation)
+
+void inputTouchSetPanPredicate(std::function<bool()> pred)
+{
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+	touchemu::panPredicate = std::move(pred);
+#else
+	(void)pred;
+#endif
+}
+
+void inputTouchSetBoxSelectArmed(bool armed)
+{
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+	touchemu::boxSelectArmed = armed;
+#else
+	(void)armed;
+#endif
+}
+
+bool inputTouchBoxSelectArmed()
+{
+#if defined(WZ_CUSTOM_TOUCH_MOUSE_EMULATION)
+	return touchemu::boxSelectArmed;
+#else
+	return false;
+#endif
+}
+
+void inputSetVirtualQueueModifier(bool enabled)
+{
+	virtualQueueModifier = enabled;
+}
+
+bool inputVirtualQueueModifier()
+{
+	return virtualQueueModifier;
+}
 
 static void inputHandleTouchFingerEvent(const SDL_TouchFingerEvent &touchFingerEvent)
 {

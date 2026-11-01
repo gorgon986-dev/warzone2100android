@@ -133,6 +133,7 @@ struct WARZONE_GLOBALS
 	// UI config
 	bool groupsMenuEnabled = true;
 	uint8_t optionsButtonVisibility = 100;
+	unsigned int touchButtonScale = 100;
 
 	// run-time only settings (not persisted to config!)
 	bool allowVulkanImplicitLayers = false;
@@ -1070,6 +1071,16 @@ void war_setGroupsMenuEnabled(bool enabled)
 void war_runtimeOnlySetAllowVulkanImplicitLayers(bool allowed) // not persisted to config
 {
 	warGlobs.allowVulkanImplicitLayers = allowed;
+}
+
+unsigned int war_getTouchButtonScale()
+{
+	return warGlobs.touchButtonScale;
+}
+
+void war_setTouchButtonScale(unsigned int val)
+{
+	warGlobs.touchButtonScale = std::max(50u, std::min(val, 300u));
 }
 
 uint8_t war_getOptionsButtonVisibility()

@@ -30,6 +30,7 @@
 #error Framework header files MUST be included from Frame.h ONLY.
 #endif
 
+#include <functional>
 #include "types.h"
 #include "lib/framework/utf.h"
 #include "vector.h"
@@ -295,6 +296,16 @@ void inputInjectPaste();
 uint32_t inputPhysicalKeyPressCount();
 /** Whether the most recent pointer input came from a touchscreen. */
 bool inputLastPointerInputWasTouch();
+
+/* Touch controls (used by the on-screen touch buttons) */
+/** Decides whether a one-finger drag that starts at the current pointer position should move the camera. */
+void inputTouchSetPanPredicate(std::function<bool()> pred);
+/** Arms a one-shot selection box: the next one-finger drag draws a box instead of moving the camera. */
+void inputTouchSetBoxSelectArmed(bool armed);
+bool inputTouchBoxSelectArmed();
+/** When enabled, the game behaves as if Shift were held (queue orders / production). */
+void inputSetVirtualQueueModifier(bool enabled);
+bool inputVirtualQueueModifier();
 /** Whether a physical keyboard seems to be connected. */
 bool inputHasPhysicalKeyboard();
 /** The character a key types in the current OS keyboard layout, or 0 for none.

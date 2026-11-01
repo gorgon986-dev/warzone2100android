@@ -47,6 +47,7 @@
 #include "lib/widget/bar.h"
 #include "lib/widget/button.h"
 #include "lib/widget/editbox.h"
+#include "touchcontrols.h"
 #include "screens/helpscreen.h"
 #include "cheat.h"
 #include "console.h"
@@ -2025,6 +2026,7 @@ bool intAddInGameOptionsButton()
 		{
 			replayOverlayScreenSizeDidChange();
 		}
+		touchControlsAddToGameScreen(); // refresh touch button layout (ex. size setting changed)
 		return false;
 	}
 
@@ -2060,6 +2062,8 @@ bool intAddInGameOptionsButton()
 
 	// Trigger Re-position of the Replay Controller form
 	replayOverlayScreenSizeDidChange();
+
+	touchControlsAddToGameScreen();
 
 	return true;
 }

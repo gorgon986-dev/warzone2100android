@@ -301,6 +301,40 @@ std::shared_ptr<OptionsForm> makeInterfaceOptionsForm(bool inGame, const std::fu
 		result->addOption(optionInfo, valueChanger, true);
 	}
 
+#if defined(__ANDROID__)
+	{
+		auto optionInfo = OptionInfo("interface.game.touchButtonScale", N_("Touch Button Size"), N_("Size of the on-screen touch buttons (Box, Queue, Army, Screen)"));
+		auto valueChanger = OptionsDropdown<unsigned int>::make(
+			[]() {
+				OptionChoices<unsigned int> result;
+				result.choices = {
+					{ _("Small"), "", 75 },
+					{ _("Normal"), "", 100 },
+					{ _("Large"), "", 130 },
+					{ _("Extra Large"), "", 160 },
+					{ _("Huge"), "", 200 },
+				};
+				auto currValue = war_getTouchButtonScale();
+				if (!result.setCurrentIdxForValue(currValue))
+				{
+					result.choices.push_back({ WzString::format("(Custom: %u%%)", currValue), "", currValue });
+					result.currentIdx = result.choices.size() - 1;
+				}
+				return result;
+			},
+			[inGame](const auto& newValue) -> bool {
+				war_setTouchButtonScale(newValue);
+				if (inGame)
+				{
+					intAddInGameOptionsButton(); // refreshes the touch buttons' layout too
+				}
+				return true;
+			}, true
+		);
+		result->addOption(optionInfo, valueChanger, true);
+	}
+#endif
+
 	result->addSection(OptionsSection(N_("Radar"), ""), true);
 	{
 		auto optionInfo = OptionInfo("interface.game.rotateRadar", N_("Radar Orientation"), "");

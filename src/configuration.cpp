@@ -440,6 +440,7 @@ bool loadConfig()
 	war_setGroupsMenuEnabled(iniGetBool("groupmenu", true).value());
 	setGroupButtonEnabled(war_getGroupsMenuEnabled());
 	war_setOptionsButtonVisibility(iniGetInteger("optionsButtonVisibility", war_getOptionsButtonVisibility()).value());
+	war_setTouchButtonScale(static_cast<unsigned int>(std::max(0, iniGetInteger("touchButtonScale", static_cast<int>(war_getTouchButtonScale())).value())));
 	setCameraAccel(iniGetBool("cameraAccel", true).value());
 	setDrawShadows(iniGetBool("shadows", true).value());
 	war_setSoundEnabled(iniGetBool("sound", true).value());
@@ -1031,6 +1032,7 @@ bool saveConfig()
 	iniSetBool("weather", atmosGetWeatherEnabled());
 	iniSetInteger("groupmenu", (int)war_getGroupsMenuEnabled());		// groups menu
 	iniSetInteger("optionsButtonVisibility", (int)war_getOptionsButtonVisibility());
+	iniSetInteger("touchButtonScale", (int)war_getTouchButtonScale());
 	iniSetInteger("mouseflip", (int)(getInvertMouseStatus()));	// flipmouse
 	iniSetInteger("nomousewarp", (int)getMouseWarp());		// mouse warp
 	iniSetInteger("coloredCursor", (int)war_GetColouredCursor());
