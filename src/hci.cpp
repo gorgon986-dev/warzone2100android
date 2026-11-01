@@ -48,6 +48,7 @@
 #include "lib/widget/button.h"
 #include "lib/widget/editbox.h"
 #include "touchcontrols.h"
+#include "takeabreak.h"
 #include "screens/helpscreen.h"
 #include "cheat.h"
 #include "console.h"
@@ -2064,6 +2065,7 @@ bool intAddInGameOptionsButton()
 	replayOverlayScreenSizeDidChange();
 
 	touchControlsAddToGameScreen();
+	takeABreakRefreshBanner();
 
 	return true;
 }

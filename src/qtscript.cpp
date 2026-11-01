@@ -502,6 +502,54 @@ bool scripting_engine::shutdownScripts()
 	return true;
 }
 
+bool unloadPlayerScript(wzapi::scripting_instance* instance)
+{
+	return scripting_engine::instance().unloadPlayerScript(instance);
+}
+
+bool isPlayerScriptLoaded(const wzapi::scripting_instance* instance)
+{
+	return scripting_engine::instance().isPlayerScriptLoaded(instance);
+}
+
+bool scripting_engine::isPlayerScriptLoaded(const wzapi::scripting_instance* instance) const
+{
+	return instance != nullptr && std::find(scripts.begin(), scripts.end(), instance) != scripts.end();
+}
+
+bool scripting_engine::unloadPlayerScript(wzapi::scripting_instance* instance)
+{
+	auto it = std::find(scripts.begin(), scripts.end(), instance);
+	if (it == scripts.end())
+	{
+		return false;
+	}
+	// drop its timers
+	for (auto t = timers.begin(); t != timers.end(); )
+	{
+		if ((*t)->instance == instance)
+		{
+			timerIDMap.erase((*t)->timerID);
+			t = timers.erase(t);
+		}
+		else
+		{
+			++t;
+		}
+	}
+	auto monitorIt = monitors.find(instance);
+	if (monitorIt != monitors.end())
+	{
+		delete monitorIt->second;
+		monitors.erase(monitorIt);
+	}
+	unregisterFunctions(instance);
+	instanceSources.erase(instance);
+	scripts.erase(it);
+	delete instance;
+	return true;
+}
+
 bool reloadScriptInstances()
 {
 	return scripting_engine::instance().reloadScriptInstances();

@@ -58,6 +58,7 @@
 #include "screens/ingameopscreen.h"
 #include "screens/spectatorgameoverscreen.h"
 #include "titleui/options/optionsforms.h"
+#include "takeabreak.h"
 
 bool hostQuitConfirmation = true;
 
@@ -189,6 +190,13 @@ static bool _intAddInGameOptions()
 	// add 'options'
 	addIGTextButton(INTINGAMEOP_OPTIONS, INTINGAMEOP_1_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP_OP_W, _("Options"), OPALIGN);
 	row++;
+
+	if (takeABreakAvailable())
+	{
+		// add 'take a break' / 'take back control' (an AI plays for you meanwhile)
+		addIGTextButton(INTINGAMEOP_TAKEABREAK, INTINGAMEOP_1_X, INTINGAMEOPAUTO_Y_LINE(row), INTINGAMEOP_OP_W, takeABreakActive() ? _("Take Back Control") : _("Take a Break (AI plays)"), OPALIGN);
+		row++;
+	}
 
 	if (!((bMultiPlayer && NetPlay.bComms) || bInTutorial || NETisReplay()))
 	{
@@ -509,6 +517,17 @@ void intProcessInGameOptions(UDWORD id)
 		break;
 	case INTINGAMEOP_RESUME:			//resume was pressed.
 		intCloseInGameOptions(false, true);
+		break;
+	case INTINGAMEOP_TAKEABREAK:
+		intCloseInGameOptions(false, true);
+		if (takeABreakActive())
+		{
+			takeABreakStop();
+		}
+		else
+		{
+			takeABreakStart();
+		}
 		break;
 	case INTINGAMEOP_GO_BACK:
 		intReopenMenuWithoutUnPausing();

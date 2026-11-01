@@ -124,6 +124,10 @@ bool updateScripts();
 // Load and evaluate the given script, kept in memory
 bool loadGlobalScript(WzString path);
 wzapi::scripting_instance* loadPlayerScript(const WzString& path, int player, AIDifficulty difficulty, wzapi::ScriptBinding binding);
+/// Unloads one script instance (ex. the "Take a Break" AI). Returns false if it is not loaded.
+bool unloadPlayerScript(wzapi::scripting_instance* instance);
+/// Whether this script instance is currently loaded
+bool isPlayerScriptLoaded(const wzapi::scripting_instance* instance);
 
 // Set/write variables in the script's global context, run after loading script,
 // but before triggering any events.
@@ -370,6 +374,8 @@ public:
 	bool shutdownScripts();
 
 	wzapi::scripting_instance* loadPlayerScript(const WzString& path, int player, AIDifficulty difficulty, wzapi::ScriptBinding binding);
+	bool unloadPlayerScript(wzapi::scripting_instance* instance);
+	bool isPlayerScriptLoaded(const wzapi::scripting_instance* instance) const;
 	bool reloadScriptInstances();
 
 	// Set/write variables in the script's global context, run after loading script,

@@ -29,6 +29,11 @@
 #include "touchcontrols.h"
 
 #include "lib/framework/frame.h"
+#include "lib/framework/stdio_ext.h"
+#include "lib/ivis_opengl/screen.h"
+#include "lib/ivis_opengl/pieblitfunc.h"
+#include "lib/ivis_opengl/piepalette.h"
+#include "lib/ivis_opengl/textdraw.h"
 #include "lib/framework/input.h"
 #include "lib/ivis_opengl/pieblitfunc.h"
 #include "lib/ivis_opengl/textdraw.h"
@@ -39,6 +44,7 @@
 
 #include "hci.h"
 #include "intdisplay.h"
+#include "intimage.h"
 #include "main.h"
 #include "ingameop.h"
 #include "multiplay.h"
@@ -102,37 +108,51 @@ class TouchBarButton : public W_BUTTON
 public:
 	std::function<bool()> isOn;
 
+	// Styled like the game's own panels: the standard blue window frame, with menu-style text
 	void display(int xOffset, int yOffset) override
 	{
 		const int x0 = x() + xOffset;
 		const int y0 = y() + yOffset;
-		const int x1 = x0 + width();
-		const int y1 = y0 + height();
 		const bool on = isOn && isOn();
 		const bool pressed = (state & WBUT_DOWN) != 0;
+		const bool hover = isMouseOverWidget();
 
-		PIELIGHT fill = WZCOL_FORM_BACKGROUND;
-		fill.byte.a = 200;
-		if (on)
+		RenderWindowFrame(FRAME_NORMAL, x0, y0, width(), height());
+		if (on || pressed)
 		{
-			fill = WZCOL_FORM_HILITE;
+			// lit-up inner panel for toggles that are on (and while pressing)
+			PIELIGHT fill = WZCOL_FORM_HILITE;
+			fill.byte.a = pressed ? 220 : 160;
+			pie_UniTransBoxFill(static_cast<float>(x0 + 3), static_cast<float>(y0 + 3), static_cast<float>(x0 + width() - 3), static_cast<float>(y0 + height() - 3), fill);
 		}
-		if (pressed)
-		{
-			fill = WZCOL_FORM_DARK;
-		}
-		pie_UniTransBoxFill(static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x1), static_cast<float>(y1), fill);
-		iV_Box(x0, y0, x1 - 1, y1 - 1, on ? WZCOL_WHITE : WZCOL_FORM_LIGHT);
 
 		if (!pText.isEmpty())
 		{
-			const int fw = iV_GetTextWidth(pText, FontID);
-			const int fx = x0 + (width() - fw) / 2;
-			const int fy = y0 + (height() - iV_GetTextLineSize(FontID)) / 2 - iV_GetTextAboveBase(FontID);
-			iV_SetTextColour(on ? WZCOL_WHITE : WZCOL_FORM_TEXT);
-			iV_DrawText(pText.toUtf8().c_str(), fx, fy, FontID);
+			if (lastText != pText || lastFont != FontID)
+			{
+				wzText.setText(pText, FontID);
+				lastText = pText;
+				lastFont = FontID;
+			}
+			const int fx = x0 + (width() - wzText.width()) / 2;
+			const int fy = y0 + (height() - wzText.lineSize()) / 2 - wzText.aboveBase();
+			PIELIGHT colour = WZCOL_TEXT_MEDIUM;
+			if (on)
+			{
+				colour = WZCOL_YELLOW;
+			}
+			else if (hover || pressed)
+			{
+				colour = WZCOL_TEXT_BRIGHT;
+			}
+			wzText.render(fx, fy, colour);
 		}
 	}
+
+private:
+	WzText wzText;
+	WzString lastText;
+	iV_fonts lastFont = font_count;
 };
 
 struct TouchButtonDef
